@@ -195,45 +195,6 @@ class Proxy:
                     if not data:
                         break
                     
-                    if is_client_to_remote:
-                        if origin == 'external':
-                            if self.isDefectDetected.value:
-                                print('\033[91m' + "Respond with Relay Response" + '\033[0m')
-                                response = await self.get_relay_response(data)
-                                if response:
-                                    client_writer.write(response)
-                                    await client_writer.drain()
-                                return
-                                
-                            elif self.isRequestChecking.value:
-                                self.isRequestChecking.value = False
-
-                                print('\033[93m' + "Response Checking" + '\033[0m')
-                                flag, response = await self.validate_response(data)
-                                if flag:
-                                    print('\033[92m' + "Data Write to Normal" + '\033[0m')
-                                    await self.data_write(self.sysNgram_data, "1")
-                                else:
-                                    print('\033[91m' + "Data Write to Abnormal" + '\033[0m')
-                                    await self.data_write(self.sysNgram_data, "-1")
-                                self.responseCheck.value = 'None'
-                                
-                                if response:
-                                    client_writer.write(response)
-                                    await client_writer.drain()
-                                return
-
-                        elif self.isInternalRequestChecking.value:
-                            self.isInternalRequestChecking.value = False
-
-                            print('\033[93m' + "Request Checking" + '\033[0m')
-                            flag = await self.validate_request(data, target_ip, target_port)
-                            if not flag:
-                                print('\033[91m' + "Data Write to Abnormal" + '\033[0m')
-                                await self.data_write(self.sysNgram_data, "-1")
-                                self.requestCheck.value = 'None'
-                                return
-                    
                     writer.write(data)
                     await writer.drain()
                 
