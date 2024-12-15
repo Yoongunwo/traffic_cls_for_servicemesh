@@ -4,7 +4,6 @@ import asyncio
 import aiohttp
 from aiohttp import web
 import json
-from urllib.parse import urlencode
 import hashlib
 import aiofiles
 from yarl import URL
@@ -17,6 +16,13 @@ import re
 import numpy as np
 import time
 
+import os
+import sys
+
+from Model import model
+from Model import preprocess
+from Detect import detecting
+
 BUFFER_SIZE = 65536  # 64KB buffer
 FLUSH_INTERVAL = 0.01  # 0.5 seconds
 IDLE_TIMEOUT = 1  # 1 second
@@ -28,32 +34,26 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class Proxy:
-    def __init__(self, rootPID, PID, monitoring_active, isDefectDetected, isRequestChecking,
-               isInternalRequestChecking, POD_NAME, POD_IP, REPLICA_INFO, netNgram_data, 
-               sysNgram_data, pause_event, TARGET_PORT, PROXY_PORT, MASTER_NODE_IP, requestCheck, responseCheck):
+    def __init__(self, rootPID, PID, isDefectDetected,
+                POD_NAME, POD_IP, REPLICA_INFO, 
+                pause_event, TARGET_PORT, PROXY_PORT, MASTER_NODE_IP,):
         self.rootPID = rootPID
         self.PID = PID
-        self.monitoring_active = monitoring_active
         self.isDefectDetected = isDefectDetected
-        self.isRequestChecking = isRequestChecking
-        self.isInternalRequestChecking = isInternalRequestChecking
         self.POD_NAME = POD_NAME
         self.POD_IP = POD_IP
         self.REPLICA_INFO = REPLICA_INFO
-        self.netNgram_data = netNgram_data
-        self.sysNgram_data = sysNgram_data
         self.pause_event = pause_event
         self.PROXY_PORT = PROXY_PORT
         self.TARGET_PORT = TARGET_PORT
         self.MASTER_NODE_IP = MASTER_NODE_IP
-        self.requestCheck = requestCheck
-        self.responseCheck = responseCheck
         self.app = web.Application(logger=None, client_max_size=0)
+
+        self.clf_model = detecting.get_model()
     
     def setup_routes(self):
         self.app.router.add_post('/get/response', self.handle_response)
         self.app.router.add_post('/receive/model', self.handle_model)
-        self.app.router.add_post('/receive/pid', self.handle_pid)
         self.app.router.add_post('/receive/pods_ip', self.handle_pods_ip)
         # self.app.router.add_get('/flush', self.handle_flush)
 
@@ -93,10 +93,7 @@ class Proxy:
                 
             if src_ip == self.POD_IP.value:
                 return dst_ip, dst_port, 'internal'
-                
-            # for replica in self.REPLICA_INFO.value:
-            #     if dst_ip == replica['ip']:
-            #         return dst_ip, self.PROXY_PORT, 'proxy_chain'
+            
             
             return dst_ip, self.TARGET_PORT, 'external'
             
@@ -115,12 +112,6 @@ class Proxy:
             target_ip, target_port, origin = await self.get_target(addr, client_writer)
             remote_reader, remote_writer = await asyncio.open_connection(target_ip, target_port)
 
-            # if origin == 'interactive':
-            #     sock = remote_writer.get_extra_info('socket')
-            #     sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-            #     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60)
-            #     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 60)
-            #     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 5)
             sock = remote_writer.get_extra_info('socket')
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60)
@@ -194,9 +185,24 @@ class Proxy:
                     # data = await asyncio.wait_for(reader.read(16384), timeout=TIMEOUT) # 25.25ms
                     if not data:
                         break
-                    
-                    writer.write(data)
-                    await writer.drain()
+
+                    packet_bytes = preprocess.packet_to_bytes(data)
+                    image = preprocess.packet_to_image(packet_bytes, 32)
+
+                    predicted = self.clf_model.classify(image) # 0 normal, 1 attack
+
+                    if predicted == 1:
+                        print('\033[91m' + "Attack Detected" + '\033[0m')
+                        self.isDefectDetected.value = True
+                        # connection close
+                        await self.close_connection(writer)
+                        await self.close_connection(client_writer)
+                        await preprocess.image_save(image, 'model/attack_traffic_image/')
+                        break
+                    else: 
+                        writer.write(data)
+                        await writer.drain()
+                        await preprocess.image_save(image, 'model/normal_traffic_image/')
                 
                 except asyncio.TimeoutError:
                     break
@@ -210,11 +216,6 @@ class Proxy:
             raise
         except Exception as e:
             print(f"Error transferring data: {e}")
-        finally:
-            if is_client_to_remote:
-                if self.responseCheck.value == 'True' or self.requestCheck.value == 'True':
-                    print('\033[92m' + "Data Write to Normal" + '\033[0m')
-                    await self.data_write(self.sysNgram_data, "1")
                 
 
     async def close_connection(self, writer):
@@ -253,6 +254,7 @@ class Proxy:
         
         return True
 
+
     async def validate_response(self, request_data):
         try:
             # 원래 remote 서버로 요청을 보내고 응답을 받습니다
@@ -289,11 +291,9 @@ class Proxy:
             elif original_response != relay_response:
                 print('\033[91m' + "Respond with Relay Response" + '\033[0m')
                 self.isDefectDetected.value = True
-                self.responseCheck.value = 'False'
                 return False, relay_response
             else:
                 print('\033[92m' + "Respond with Original Response" + '\033[0m')
-                self.responseCheck.value = 'True'
                 return True, original_response
 
         except Exception as e:
@@ -326,15 +326,6 @@ class Proxy:
             return None
         print('\033[94m' + f"Relay request to {target_pod_ip}" + '\033[0m')
         try:
-            # reader, writer = await asyncio.open_connection(target_pod_ip, self.PROXY_PORT)
-            # writer.write(data)
-            # await writer.drain()
-
-            # response = await reader.read(4096)
-            # writer.close()
-            # await writer.wait_closed()
-            # return response
-
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     url=f"http://{target_pod_ip}:{PROXY_API_PORT}/get/response",
@@ -442,11 +433,9 @@ class Proxy:
                             if 'result' in json_response:
                                 if json_response['result'] == "valid":
                                     print('\033[92m' + "Allow Internal Request" + '\033[0m')
-                                    self.requestCheck.value = 'True'
                                     return True
                                 else:
                                     print('\033[91m' + "Drop Internal Request" + '\033[0m')
-                                    self.requestCheck.value = 'False'
                                     return False
                             else:
                                 # # #logger.error(f"Unexpected response format: {json_response}")
@@ -459,37 +448,9 @@ class Proxy:
             return False
         except Exception as e:
             return False
-
-# data_write(' '.join(map(str, ngram)), "normal")
-    async def data_write(self, queue, label):
-        if queue.empty() or queue is None:
-            print("Queue is empty")
-            return
-        try:
-            queue.put("exit")
-            while True:
-                data = queue.get()
-                if isinstance(data, str) and data == "exit":
-                    break
-                if isinstance(data, np.ndarray):
-                    data_str = ' '.join(str(x) for x in data.flatten())
-                elif isinstance(data, list):
-                    data_str = ' '.join(map(str, data))
-                else:
-                    data_str = str(data)
-
-                async with aiofiles.open('./model/data.txt', 'a') as f:
-                    await f.write(f"{data_str} : {label}\n")
-
-            self.requestCheck.value = 'None'
-            self.responseCheck.value = 'None'
-
-        except Exception as e:
-            print(f"Error in data_write: {e}")
         
     async def handle_response(self, request):
         try:
-            self.isInternalRequestChecking.value = True # ??
             data = await request.json()
             request  = data['request']
 
@@ -532,22 +493,6 @@ class Proxy:
             self.pause_event.set()
             return web.Response(text=str(e), status=500)
 
-    async def handle_pid(self, request):
-        try:
-            data = await request.json()
-            self.rootPID.value = int(data['rootPID'])
-            self.PID[:] = data['pid']
-
-            if not self.monitoring_active.value:
-                self.monitoring_active.value = True
-
-            return web.Response(
-                text=json.dumps({'status': 'success', 'message': 'PID data received and stored.'}),
-                content_type='application/json'
-            )
-        except Exception as e:
-            return web.Response(text=str(e), status=500)
-
     async def handle_pods_ip(self, request):
         try:
             global CHECK_GET_IPS
@@ -569,21 +514,6 @@ class Proxy:
             )   
         except Exception as e:
             return web.Response(text=str(e), status=500)
-
-    # async def handle_flush(self, request):
-    #     try:
-    #         if self.responseCheck.value != 'None' and self.requestCheck.value != 'None':
-    #             if self.responseCheck.value == 'True' and self.requestCheck.value == 'True':
-    #                 await self.data_write(self.sysNgram_data, "normal")
-    #             else:
-    #                 await self.data_write(self.sysNgram_data, "abnormal")
-    #         else:
-    #             await self.data_write(self.sysNgram_data, "abnormal")
-            
-    #         return web.Response(text='Data flushed successfully.', status=200)
-    #     except Exception as e:
-    #         return web.Response(text=str(e), status=500)
-
 
 async def get_forwarding_url(request, TARGET_URL):
     target_path = request.path_qs

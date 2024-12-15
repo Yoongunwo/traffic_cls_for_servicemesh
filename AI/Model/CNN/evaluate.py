@@ -101,7 +101,7 @@ def evaluate_model(model, test_normal_loader, test_attack_loader, device='cuda')
     plt.title('Confusion Matrix')
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
-    plt.savefig('confusion_matrix.png')
+    plt.savefig('confusion_matrix_front.png')
     plt.close()
     
     return {

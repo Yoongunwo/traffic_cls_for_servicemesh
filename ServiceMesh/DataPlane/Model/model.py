@@ -8,11 +8,6 @@ import os
 import sys
 from collections import Counter
 
-current_dir = os.getcwd()  # C:\Users\gbwl3\Desktop\SourceCode\k8s_research
-sys.path.append(current_dir)
-
-from AI.Model.CNN import evaluate
-
 # 커스텀 데이터셋 클래스
 class PacketImageDataset(Dataset):
     def __init__(self, root_dir, transform=None, is_flat_structure=True):
@@ -93,6 +88,10 @@ class SimplePacketCNN(nn.Module):
         x = self.conv3(x)
         x = self.fc(x)
         return x
+    
+    def classify(self, x):
+        x = self.forward(x)
+        return torch.argmax(x, dim=1)
 
 # 학습 함수
 def train_model(model, train_loader, criterion, optimizer, num_epochs=10, device='cuda'):
@@ -114,73 +113,73 @@ def train_model(model, train_loader, criterion, optimizer, num_epochs=10, device
         print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}')
 
 # 메인 실행 코드
-def main():
-    # 장치 설정
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# def main():
+#     # 장치 설정
+#     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    # 데이터 변환 정의
-    transform = transforms.Compose([
-        transforms.Resize((32, 32)),
-        transforms.ToTensor(),
-    ])
+#     # 데이터 변환 정의
+#     transform = transforms.Compose([
+#         transforms.Resize((32, 32)),
+#         transforms.ToTensor(),
+#     ])
     
-    # Normal 데이터셋 로드
-    normal_dataset = PacketImageDataset(
-        './Data/save/save_packet_to_byte/front_image', 
-        transform=transform,
-        is_flat_structure=True
-    )
+#     # Normal 데이터셋 로드
+#     normal_dataset = PacketImageDataset(
+#         './Data/save/save_packet_to_byte/back_image', 
+#         transform=transform,
+#         is_flat_structure=True
+#     )
 
-    # Attack 데이터셋 로드
-    attack_dataset = PacketImageDataset(
-        './Data/attack/attack_to_byte', 
-        transform=transform,
-        is_flat_structure=False
-    )
+#     # Attack 데이터셋 로드
+#     attack_dataset = PacketImageDataset(
+#         './Data/attack/attack_to_byte', 
+#         transform=transform,
+#         is_flat_structure=False
+#     )
 
-    # 각 데이터셋을 학습/테스트용으로 분할
-    generator = torch.Generator().manual_seed(42)
+#     # 각 데이터셋을 학습/테스트용으로 분할
+#     generator = torch.Generator().manual_seed(42)
 
-    # Normal 데이터 분할
-    normal_train_size = int(0.8 * len(normal_dataset))
-    normal_test_size = len(normal_dataset) - normal_train_size
-    normal_train_dataset, normal_test_dataset = torch.utils.data.random_split(
-        normal_dataset, [normal_train_size, normal_test_size],
-        generator=generator
-    )
+#     # Normal 데이터 분할
+#     normal_train_size = int(0.8 * len(normal_dataset))
+#     normal_test_size = len(normal_dataset) - normal_train_size
+#     normal_train_dataset, normal_test_dataset = torch.utils.data.random_split(
+#         normal_dataset, [normal_train_size, normal_test_size],
+#         generator=generator
+#     )
 
-    # Attack 데이터 분할
-    attack_train_size = int(0.8 * len(attack_dataset))
-    attack_test_size = len(attack_dataset) - attack_train_size
-    attack_train_dataset, attack_test_dataset = torch.utils.data.random_split(
-        attack_dataset, [attack_train_size, attack_test_size],
-        generator=generator
-    )
+#     # Attack 데이터 분할
+#     attack_train_size = int(0.8 * len(attack_dataset))
+#     attack_test_size = len(attack_dataset) - attack_train_size
+#     attack_train_dataset, attack_test_dataset = torch.utils.data.random_split(
+#         attack_dataset, [attack_train_size, attack_test_size],
+#         generator=generator
+#     )
 
-    # 학습 데이터셋 결합 (Normal + Attack)
-    train_dataset = torch.utils.data.ConcatDataset([
-        normal_train_dataset,
-        attack_train_dataset
-    ])
+#     # 학습 데이터셋 결합 (Normal + Attack)
+#     train_dataset = torch.utils.data.ConcatDataset([
+#         normal_train_dataset,
+#         attack_train_dataset
+#     ])
     
-    # 데이터로더 생성
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-    test_normal_loader = DataLoader(normal_test_dataset, batch_size=32, shuffle=False)
-    test_attack_loader = DataLoader(attack_test_dataset, batch_size=32, shuffle=False)
+#     # 데이터로더 생성
+#     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+#     test_normal_loader = DataLoader(normal_test_dataset, batch_size=32, shuffle=False)
+#     test_attack_loader = DataLoader(attack_test_dataset, batch_size=32, shuffle=False)
     
-    # 모델 초기화
-    model = SimplePacketCNN().to(device)
+#     # 모델 초기화
+#     model = SimplePacketCNN().to(device)
     
-    # 손실 함수와 옵티마이저 정의
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+#     # 손실 함수와 옵티마이저 정의
+#     criterion = nn.CrossEntropyLoss()
+#     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
-    # 모델 학습
-    train_model(model, train_loader, criterion, optimizer, num_epochs=10, device=device)
-    torch.save(model.state_dict(), 'packet_classifier_front.pth')
+#     # 모델 학습
+#     train_model(model, train_loader, criterion, optimizer, num_epochs=10, device=device)
+#     torch.save(model.state_dict(), 'packet_classifier.pth')
     
-    # 모델 평가
-    evaluate.evaluate_model(model, test_normal_loader, test_attack_loader, device=device)
+#     # 모델 평가
+#     evaluate.evaluate_model(model, test_normal_loader, test_attack_loader, device=device)
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()
