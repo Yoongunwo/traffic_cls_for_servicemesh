@@ -72,20 +72,20 @@ def main():
     
     # 데이터 변환
     transform = transforms.Compose([
-        transforms.Resize((32, 32)),
+        transforms.Resize((16, 16)), ## image size
         transforms.ToTensor()
     ])
     
     # 데이터셋 로드
     normal_dataset = autoencoder_model.PacketImageDataset(
-        './Data/save/save_packet_to_byte/front_image', 
+        './Data/save/save_packet_to_byte_16/front_image', 
         transform=transform,
         is_flat_structure=True
     )
 
     # Attack 데이터셋 로드
     attack_test_dataset = autoencoder_model.PacketImageDataset(
-        './Data/attack/attack_to_byte', 
+        './Data/attack/attack_to_byte_16', 
         transform=transform,
         is_flat_structure=False
     )
@@ -102,9 +102,9 @@ def main():
         generator=generator
     )
 
-    train_loader = DataLoader(normal_train_dataset, batch_size=1024*16, shuffle=True)
-    test_normal_loader = DataLoader(normal_test_dataset, batch_size=1024*16, shuffle=False)
-    test_attack_loader = DataLoader(attack_test_dataset, batch_size=1024*16, shuffle=False)
+    train_loader = DataLoader(normal_train_dataset, batch_size=1024*8, shuffle=True)
+    test_normal_loader = DataLoader(normal_test_dataset, batch_size=1024*8, shuffle=False)
+    test_attack_loader = DataLoader(attack_test_dataset, batch_size=1024*8, shuffle=False)
 
 
     # 모델 초기화
@@ -153,7 +153,7 @@ def main():
         'model_state_dict': model.state_dict(),
         'threshold': threshold,
         'roc_auc': roc_auc,
-    }, 'autoencoder_model.pth')
+    }, 'autoencoder_model_16.pth')
     
 if __name__ == '__main__':
     main()

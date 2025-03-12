@@ -59,21 +59,21 @@ class SimplePacketCNN(nn.Module):
         
         # 첫 번째 컨볼루션 블록
         self.conv1 = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.Conv2d(1, 16, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(2)
         )
         
         # 두 번째 컨볼루션 블록
         self.conv2 = nn.Sequential(
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.Conv2d(16, 32, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(2)
         )
         
         # 세 번째 컨볼루션 블록
         self.conv3 = nn.Sequential(
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(2)
         )
@@ -81,10 +81,10 @@ class SimplePacketCNN(nn.Module):
         # 완전 연결 계층
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(128 * 4 * 4, 512),
+            nn.Linear(64 * 2 * 2, 256),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(512, num_classes)
+            nn.Linear(256, num_classes)
         )
 
     def forward(self, x):
@@ -120,20 +120,20 @@ def main():
     
     # 데이터 변환 정의
     transform = transforms.Compose([
-        transforms.Resize((32, 32)),
+        transforms.Resize((16, 16)),
         transforms.ToTensor(),
     ])
     
     # Normal 데이터셋 로드
     normal_dataset = PacketImageDataset(
-        './Data/save/save_packet_to_byte/front_image', 
+        './Data/save/save_packet_to_byte_16/front_image', 
         transform=transform,
         is_flat_structure=True
     )
 
     # Attack 데이터셋 로드
     attack_dataset = PacketImageDataset(
-        './Data/attack/attack_to_byte', 
+        './Data/attack/attack_to_byte_16', 
         transform=transform,
         is_flat_structure=False
     )
@@ -164,9 +164,9 @@ def main():
     ])
     
     # 데이터로더 생성
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-    test_normal_loader = DataLoader(normal_test_dataset, batch_size=32, shuffle=False)
-    test_attack_loader = DataLoader(attack_test_dataset, batch_size=32, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=16384, shuffle=True)
+    test_normal_loader = DataLoader(normal_test_dataset, batch_size=16384, shuffle=False)
+    test_attack_loader = DataLoader(attack_test_dataset, batch_size=16384, shuffle=False)
     
     # 모델 초기화
     model = SimplePacketCNN().to(device)
@@ -176,8 +176,8 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
     # 모델 학습
-    train_model(model, train_loader, criterion, optimizer, num_epochs=10, device=device)
-    torch.save(model.state_dict(), 'packet_classifier_front.pth')
+    train_model(model, train_loader, criterion, optimizer, num_epochs=50, device=device)
+    torch.save(model.state_dict(), 'packet_classifier_front_16_epoch50.pth')
     
     # 모델 평가
     evaluate.evaluate_model(model, test_normal_loader, test_attack_loader, device=device)

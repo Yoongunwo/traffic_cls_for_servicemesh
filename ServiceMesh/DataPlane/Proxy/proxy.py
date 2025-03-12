@@ -234,7 +234,7 @@ class Proxy:
     def connect_to_remote(self, target_ip, target_port):
         self.remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            self.remote.settimeout(TIMEOUT)
+            self.remote.settimeout(TIMET)
             self.remote.connect((target_ip, target_port))
             self.remote.settimeout(None)
         except ConnectionRefusedError as e:
@@ -319,7 +319,7 @@ class Proxy:
         except Exception as e:
             print(f"Error getting remote response: {e}")
             return None
-    
+    OU
     async def get_relay_response(self, data):
         target_pod_ip = next((replica['ip'] for replica in self.REPLICA_INFO), '')
         if not target_pod_ip:

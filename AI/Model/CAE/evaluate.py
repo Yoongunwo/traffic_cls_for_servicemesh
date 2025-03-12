@@ -119,6 +119,8 @@ def plot_confusion_matrix(model, test_normal_loader, test_attack_loader, thresho
     model.eval()
     all_predictions = []
     all_labels = []
+    normal_errors = []
+    attack_errors = []
     
     # 정상 데이터 처리
     with torch.no_grad():
@@ -126,9 +128,14 @@ def plot_confusion_matrix(model, test_normal_loader, test_attack_loader, thresho
             images = images.to(device)
             outputs = model(images)
             errors = torch.mean((images - outputs) ** 2, dim=(1,2,3))
+            
+            # Append errors
+            normal_errors.extend(errors.cpu().numpy())
+
             predictions = (errors > threshold).cpu().numpy().astype(int)
             all_predictions.extend(predictions)
-            all_labels.extend(labels.numpy())
+            all_labels.extend([0] * images.size(0)) 
+            # all_labels.extend(labels.numpy())
 
     # 공격 데이터 처리
     with torch.no_grad():
@@ -136,32 +143,72 @@ def plot_confusion_matrix(model, test_normal_loader, test_attack_loader, thresho
             images = images.to(device)
             outputs = model(images)
             errors = torch.mean((images - outputs) ** 2, dim=(1,2,3))
+
+            # Append errors
+            attack_errors.extend(errors.cpu().numpy())
+
             predictions = (errors > threshold).cpu().numpy().astype(int)
             all_predictions.extend(predictions)
-            all_labels.extend(labels.numpy())
-
-    # Confusion Matrix 계산
-    cm = confusion_matrix(all_labels, all_predictions)
+            all_labels.extend([1] * images.size(0))
+            # all_labels.extend(labels.numpy())
     
-    # 시각화
+    # return metrics
+    print(f"Normal errors - min: {np.min(normal_errors):.6f}, max: {np.max(normal_errors):.6f}, mean: {np.mean(normal_errors):.6f}, std: {np.std(normal_errors):.6f}")
+    print(f"Attack errors - min: {np.min(attack_errors):.6f}, max: {np.max(attack_errors):.6f}, mean: {np.mean(attack_errors):.6f}, std: {np.std(attack_errors):.6f}")
+    print(f"Current threshold: {threshold:.6f}")
+    
+    # 더 나은 임계값 계산해보기
+    all_errors = np.concatenate([normal_errors, attack_errors])
+    all_true_labels = np.concatenate([[0] * len(normal_errors), [1] * len(attack_errors)])
+    fpr, tpr, thresholds = roc_curve(all_true_labels, all_errors)
+    
+    # Youden's J statistic으로 최적 임계값 찾기 (specificity + sensitivity - 1을 최대화)
+    j_scores = tpr - fpr
+    optimal_idx = np.argmax(j_scores)
+    optimal_threshold = thresholds[optimal_idx]
+    
+    print(f"Calculated optimal threshold: {optimal_threshold:.6f}")
+    print(f"At optimal threshold - TPR: {tpr[optimal_idx]:.4f}, FPR: {fpr[optimal_idx]:.4f}")
+    
+    # 혼동 행렬 계산을 위해 최적 임계값으로 예측 다시 생성
+    all_predictions_optimal = (np.array(all_errors) > optimal_threshold).astype(int)
+    
+    # 원래 임계값으로의 혼동 행렬
+    cm_original = confusion_matrix(all_labels, all_predictions)
+    
+    # 최적 임계값으로의 혼동 행렬
+    cm_optimal = confusion_matrix(all_true_labels, all_predictions_optimal)
+    
+    # 시각화 - 원래 임계값
     plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+    sns.heatmap(cm_original, annot=True, fmt='d', cmap='Blues',
                 xticklabels=['Normal', 'Attack'],
                 yticklabels=['Normal', 'Attack'])
-    plt.title('Confusion Matrix')
+    plt.title(f'Confusion Matrix (Threshold: {threshold:.6f})')
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
-    plt.savefig('confusion_matrix.png')
+    plt.savefig('confusion_matrix_original.png')
     plt.close()
     
-    # 성능 메트릭 계산
-    tn, fp, fn, tp = cm.ravel()
+    # 시각화 - 최적 임계값
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm_optimal, annot=True, fmt='d', cmap='Blues',
+                xticklabels=['Normal', 'Attack'],
+                yticklabels=['Normal', 'Attack'])
+    plt.title(f'Confusion Matrix (Optimal Threshold: {optimal_threshold:.6f})')
+    plt.ylabel('True Label')
+    plt.xlabel('Predicted Label')
+    plt.savefig('confusion_matrix_optimal.png')
+    plt.close()
+    
+    # 원래 임계값으로의 성능 메트릭 계산
+    tn, fp, fn, tp = cm_original.ravel()
     accuracy = (tp + tn) / (tp + tn + fp + fn)
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
     
-    metrics = {
+    metrics_original = {
         'accuracy': accuracy,
         'precision': precision,
         'recall': recall,
@@ -172,7 +219,38 @@ def plot_confusion_matrix(model, test_normal_loader, test_attack_loader, thresho
         'true_positives': int(tp)
     }
     
-    return metrics
+    # 최적 임계값으로의 성능 메트릭 계산
+    tn_opt, fp_opt, fn_opt, tp_opt = cm_optimal.ravel()
+    accuracy_opt = (tp_opt + tn_opt) / (tp_opt + tn_opt + fp_opt + fn_opt)
+    precision_opt = tp_opt / (tp_opt + fp_opt) if (tp_opt + fp_opt) > 0 else 0
+    recall_opt = tp_opt / (tp_opt + fn_opt) if (tp_opt + fn_opt) > 0 else 0
+    f1_opt = 2 * precision_opt * recall_opt / (precision_opt + recall_opt) if (precision_opt + recall_opt) > 0 else 0
+    
+    metrics_optimal = {
+        'accuracy': accuracy_opt,
+        'precision': precision_opt,
+        'recall': recall_opt,
+        'f1_score': f1_opt,
+        'true_negatives': int(tn_opt),
+        'false_positives': int(fp_opt),
+        'false_negatives': int(fn_opt),
+        'true_positives': int(tp_opt),
+        'optimal_threshold': optimal_threshold
+    }
+    
+    print("\nOriginal Threshold Metrics:")
+    print(f"Accuracy: {metrics_original['accuracy']:.4f}")
+    print(f"Precision: {metrics_original['precision']:.4f}")
+    print(f"Recall: {metrics_original['recall']:.4f}")
+    print(f"F1 Score: {metrics_original['f1_score']:.4f}")
+    
+    print("\nOptimal Threshold Metrics:")
+    print(f"Accuracy: {metrics_optimal['accuracy']:.4f}")
+    print(f"Precision: {metrics_optimal['precision']:.4f}")
+    print(f"Recall: {metrics_optimal['recall']:.4f}")
+    print(f"F1 Score: {metrics_optimal['f1_score']:.4f}")
+    
+    return metrics_original, metrics_optimal
 
 def main():
     # 설정
@@ -181,20 +259,20 @@ def main():
     
     # 데이터 변환
     transform = transforms.Compose([
-        transforms.Resize((32, 32)),
+        transforms.Resize((16, 16)),
         transforms.ToTensor()
     ])
     
     # 데이터셋 로드
     normal_dataset = autoencoder_model.PacketImageDataset(
-        './Data/save/save_packet_to_byte/front_image', 
+        './Data/save/save_packet_to_byte_16/front_image', 
         transform=transform,
         is_flat_structure=True
     )
 
     # Attack 데이터셋 로드
     attack_test_dataset = autoencoder_model.PacketImageDataset(
-        './Data/attack/attack_to_byte', 
+        './Data/attack/attack_to_byte_16', 
         transform=transform,
         is_flat_structure=False
     )
@@ -220,9 +298,9 @@ def main():
     
     # 모델 로드
     model = autoencoder_model.ConvAutoencoder().to(device)
-    (torch.load('./AI/Model/CAE/autoencoder_model.pth'))
+    (torch.load('./AI/Model/CAE/autoencoder_model_16.pth'))
     
-    checkpoint = torch.load('./AI/Model/CAE/autoencoder_model.pth')
+    checkpoint = torch.load('./AI/Model/CAE/autoencoder_model_16.pth')
     model = autoencoder_model.ConvAutoencoder().to(device)
     model.load_state_dict(checkpoint['model_state_dict'])  # state_dict만 로드
     threshold = checkpoint['threshold']  # 저장된 임계값 사용
@@ -231,10 +309,57 @@ def main():
     evaluate_model(model, test_normal_loader, threshold, device=device)
     
     # ROC 커브 그리기
-    plot_roc_curve(model, test_normal_loader, test_attack_loader, threshold, device=device)
+    # plot_roc_curve(model, test_normal_loader, test_attack_loader, threshold, device=device)
+    
+    # # 혼동 행렬 및 성능 메트릭 계산
+    # metrics = plot_confusion_matrix(model, test_normal_loader, test_attack_loader, threshold, device=device)
+
+    # print(f"Precision: {metrics['precision']:.4f}")
+    # print(f"Recall: {metrics['recall']:.4f}")
+    # print(f"F1 Score: {metrics['f1_score']:.4f}")
+    roc_auc = plot_roc_curve(model, test_normal_loader, test_attack_loader, threshold, device=device)
+    print(f"ROC AUC: {roc_auc:.4f}")
     
     # 혼동 행렬 및 성능 메트릭 계산
-    plot_confusion_matrix(model, test_normal_loader, test_attack_loader, threshold, device=device)
+    metrics_original, metrics_optimal = plot_confusion_matrix(model, test_normal_loader, test_attack_loader, threshold, device=device)
+    
+    # 최적 임계값으로 모델 다시 평가
+    if metrics_optimal['f1_score'] > metrics_original['f1_score']:
+        print(f"\nUsing optimal threshold: {metrics_optimal['optimal_threshold']:.6f}")
+        print(f"Precision: {metrics_optimal['precision']:.4f}")
+        print(f"Recall: {metrics_optimal['recall']:.4f}")
+        print(f"F1 Score: {metrics_optimal['f1_score']:.4f}")
+        
+        # 최적 임계값으로 새 체크포인트 저장
+        checkpoint['threshold'] = metrics_optimal['optimal_threshold']
+        torch.save(checkpoint, './AI/Model/CAE/autoencoder_model_16_optimal.pth')
+        print("Saved model with optimal threshold")
+    else:
+        print(f"\nKeeping original threshold: {threshold:.6f}")
+        print(f"Precision: {metrics_original['precision']:.4f}")
+        print(f"Recall: {metrics_original['recall']:.4f}")
+        print(f"F1 Score: {metrics_original['f1_score']:.4f}")
+
+    attack_precision_original = metrics_original['true_positives'] / (metrics_original['true_positives'] + metrics_original['false_negatives']) if (metrics_original['true_positives'] + metrics_original['false_negatives']) > 0 else 0
+    attack_recall_original = metrics_original['true_positives'] / (metrics_original['true_positives'] + metrics_original['false_positives']) if (metrics_original['true_positives'] + metrics_original['false_positives']) > 0 else 0
+
+    attack_precision_optimal = metrics_optimal['true_positives'] / (metrics_optimal['true_positives'] + metrics_optimal['false_negatives']) if (metrics_optimal['true_positives'] + metrics_optimal['false_negatives']) > 0 else 0
+    attack_recall_optimal = metrics_optimal['true_positives'] / (metrics_optimal['true_positives'] + metrics_optimal['false_positives']) if (metrics_optimal['true_positives'] + metrics_optimal['false_positives']) > 0 else 0
+
+    print("\n🔹 공격 기준 Precision & Recall (Original Threshold)")
+    print(f"Attack Precision: {attack_precision_original:.4f}")
+    print(f"Attack Recall: {attack_recall_original:.4f}")
+
+    print("\n🔹 공격 기준 Precision & Recall (Optimal Threshold)")
+    print(f"Attack Precision: {attack_precision_optimal:.4f}")
+    print(f"Attack Recall: {attack_recall_optimal:.4f}")
+
+    normal_precision_optimal = metrics_optimal['true_negatives'] / (metrics_optimal['true_negatives'] + metrics_optimal['false_positives']) if (metrics_optimal['true_negatives'] + metrics_optimal['false_positives']) > 0 else 0
+    normal_recall_optimal = metrics_optimal['true_negatives'] / (metrics_optimal['true_negatives'] + metrics_optimal['false_negatives']) if (metrics_optimal['true_negatives'] + metrics_optimal['false_negatives']) > 0 else 0
+
+    print("\n🔹 정상 기준 Precision & Recall (Optimal Threshold)")
+    print(f"Normal Precision: {normal_precision_optimal:.4f}")
+    print(f"Normal Recall: {normal_recall_optimal:.4f}")
 
 if __name__ == '__main__':
     main()

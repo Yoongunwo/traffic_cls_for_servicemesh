@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import binascii
 
+import time
+
 current_dir = os.getcwd()  # C:\Users\gbwl3\Desktop\SourceCode\k8s_research
 sys.path.append(current_dir)
 
@@ -73,22 +75,14 @@ def process_pcap_to_images(pcap_file, output_dir, width=32, start_idx=0, max_pac
     end_idx = len(packets) if max_packets is None else min(start_idx + max_packets, len(packets))
     
     for i in range(start_idx, end_idx):
-        # 패킷을 이미지로 변환
+        s_time = time.time()
         packet_bytes = packet_to_bytes(packets[i])
         image = packet_to_image(packet_bytes, width)
+        e_time = time.time()
+        print(f"Processing packet {i} - Elapsed time: {e_time - s_time}s")
+        break
         
-        # 이미지 파일 경로
-        image_path = os.path.join(output_dir, f'packet_{i}.png')
-        
-        # 이미지 저장 (기본 흑백)
-        save_packet_image(image, image_path)
-        
-        # 컬러맵 버전도 저장하고 싶다면:
-        # colormap_path = os.path.join(output_dir, f'packet_{i}_colormap.png')
-        # save_packet_image(image, colormap_path, mode='colormap')
-        
-        if (i - start_idx + 1) % 100 == 0:
-            print(f'Processed {i - start_idx + 1} packets')
+
 
 if __name__ == "__main__":
     data_root_path = "./Data"

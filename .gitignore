@@ -2,3 +2,5 @@ Data/*
 *.png
 *.pth
 .venv/
+
+__pycache__/
