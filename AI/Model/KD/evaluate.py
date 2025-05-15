@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torchvision.transforms as transforms
-from torch.utils.data import DataLoader
+
+from torch.utils.data import DataLoader, Subset
+
 from sklearn.metrics import classification_report
 import numpy as np
 import os
@@ -45,7 +46,7 @@ transform = transforms.Compose([
 
 # ✅ 테스트 데이터셋 로드 (공격 및 정상 데이터)
 normal_test_dataset = cnn_train.PacketImageDataset(
-    './Data/save/save_packet_to_byte_16/front_image',
+    './Data/benign/save/save_packet_to_byte_16/front_image',
     transform=transform,
     is_flat_structure=True
 )
@@ -55,12 +56,27 @@ attack_test_dataset = cnn_train.PacketImageDataset(
     is_flat_structure=False
 )
 
-# ✅ DataLoader 생성
-batch_size = 1  # 메모리 최적화
+min_len = min(len(normal_test_dataset), len(attack_test_dataset))
+
+normal_subset = Subset(normal_test_dataset, list(range(min_len)))
+attack_subset = Subset(attack_test_dataset, list(range(min_len)))
+
+# ✅ 병합된 균형 테스트 데이터셋
+balanced_test_dataset = torch.utils.data.ConcatDataset([normal_subset, attack_subset])
+
+# ✅ DataLoader
 test_loader = DataLoader(
-    torch.utils.data.ConcatDataset([normal_test_dataset, attack_test_dataset]), 
-    batch_size=batch_size, shuffle=False
+    balanced_test_dataset,
+    batch_size=1024,
+    shuffle=False
 )
+
+# ✅ DataLoader 
+# batch_size = 1024  # 메모리 최적화
+# test_loader = DataLoader(
+#     torch.utils.data.ConcatDataset([normal_test_dataset, attack_test_dataset]), 
+#     batch_size=batch_size, shuffle=False
+# )
 
 # ✅ 평가 지표 저장
 all_labels = []
@@ -77,12 +93,18 @@ with torch.no_grad():
         end_time = time.time()
         
         print(f"Elapsed Time: {end_time - start_time:.4f} sec")
-        break
+        # break
         all_labels.extend(labels.cpu().numpy())
         all_preds.extend(preds.cpu().numpy())
 
 # ✅ Classification Report 생성
-report = classification_report(all_labels, all_preds, target_names=["Normal", "Attack"], digits=4)
+report = classification_report(
+    all_labels, 
+    all_preds, 
+    target_names=["Normal", "Attack"], 
+    digits=4
+)
+
 print("\n📌 Classification Report:\n")
 print(report)
 
