@@ -1,6 +1,8 @@
-Data/*
 *.png
 *.pth
 .venv/
+*.bz2
+*.pcap
+Data/
 
 __pycache__/
