@@ -32,4 +32,7 @@ for split_name, split_files in zip(["train", "val", "test"], [train_files, val_f
         dst = os.path.join(split_dir, f)
         shutil.copy2(src, dst)
 
+for f in all_files:
+    os.remove(os.path.join(source_dir, f))
+
 print(f"✅ result : {len(train_files)} train / {len(val_files)} val / {len(test_files)} test")
