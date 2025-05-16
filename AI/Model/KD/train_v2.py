@@ -7,12 +7,10 @@ import torchvision.transforms as transforms
 from torchvision import models
 from torch.utils.data import DataLoader, Dataset
 
-
 import os
 import sys
-from collections import Counter
 
-current_dir = os.getcwd()  # C:\Users\gbwl3\Desktop\SourceCode\k8s_research
+current_dir = os.getcwd() 
 sys.path.append(current_dir)
 
 from AI.Model.CNN import train_v2 as cnn_train

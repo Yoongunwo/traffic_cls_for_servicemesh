@@ -14,43 +14,35 @@ sys.path.append(current_dir)
 from AI.Model.CNN import evaluate
 
 # 커스텀 데이터셋 클래스
-class PacketImageDataset(Dataset):
-    def __init__(self, root_dir, transform=None, is_flat_structure=True):
+class PacketImageDataset(torch.utils.data.Dataset):
+    def __init__(self, root_dir, transform=None, is_flat_structure=True, label=0):
         self.transform = transform
         self.images = []
         self.labels = []
-        
-        if is_flat_structure:  # 이미지가 바로 있는 경우 (normal)
+
+        if is_flat_structure:
             for file in os.listdir(root_dir):
                 if file.endswith('.png'):
                     self.images.append(os.path.join(root_dir, file))
-                    self.labels.append(0)  # normal은 0
-        else:  # 하위 폴더가 있는 경우 (attack)
+                    self.labels.append(label)
+        else:
             for subdir, _, files in os.walk(root_dir):
-                folder_name = os.path.basename(subdir)
-                if files:  # 파일이 있는 폴더만 처리
-                    for file in files:
-                        if file.endswith('.png'):
-                            self.images.append(os.path.join(subdir, file))
-                            self.labels.append(1)  # attack은 1
-        
-        print(f"Found {len(self.images)} images in {root_dir}")
-        if len(self.images) > 0:
-            print(f"Sample path: {self.images[0]}")
+                for file in files:
+                    if file.endswith('.png'):
+                        self.images.append(os.path.join(subdir, file))
+                        self.labels.append(label)
+
+        print(f"Loaded {len(self.images)} images from {root_dir}")
         print(f"Label distribution: {dict(Counter(self.labels))}")
 
     def __len__(self):
         return len(self.images)
 
     def __getitem__(self, idx):
-        img_path = self.images[idx]
-        image = Image.open(img_path).convert('L')
-        
+        img = Image.open(self.images[idx]).convert('L')
         if self.transform:
-            image = self.transform(image)
-        
-        label = self.labels[idx]
-        return image, label
+            img = self.transform(img)
+        return img, self.labels[idx]
 
 # CNN 모델 정의
 class SimplePacketCNN(nn.Module):
