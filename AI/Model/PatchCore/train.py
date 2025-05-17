@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
+from torchvision.models import resnet18, ResNet18_Weights
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, Dataset, Subset
 import numpy as np
@@ -60,7 +61,7 @@ class PacketImageDataset(Dataset):
 class FeatureExtractor(nn.Module):
     def __init__(self):
         super(FeatureExtractor, self).__init__()
-        resnet = models.resnet18(pretrained=True)
+        resnet = resnet18(weights=ResNet18_Weights.DEFAULT)
         self.features = nn.Sequential(*list(resnet.children())[:-2])  # [B, 512, 2, 2]
 
     def forward(self, x):
@@ -71,7 +72,29 @@ def flatten_features(feats):
     b, c, h, w = feats.shape
     return feats.permute(0, 2, 3, 1).reshape(b, -1, c)  # [B, H*W, C]
 
-# ✅ Main Training & Evaluation
+def evaluate_patchcore(embedding_path, model_path, test_loader, device):
+    model = FeatureExtractor().to(device)
+    model.eval()
+
+    embedding_path = np.load(embedding_path)
+    nn_model = joblib.load(model_path)
+    
+    all_labels, all_scores = [], []
+    with torch.no_grad():
+        for x, labels in test_loader:
+            x = x.to(device)
+            feat = model(x)
+            patches = flatten_features(feat).reshape(-1, 512).cpu().numpy()
+            dists, _ = nn_model.kneighbors(patches)
+            scores = dists.reshape(x.size(0), -1).mean(axis=1)
+            all_scores.extend(scores)
+            all_labels.extend(labels.numpy())
+
+    all_scores = np.array(all_scores)
+    all_labels = np.array(all_labels)
+    preds = [1 if s > np.percentile(all_scores, 95) else 0 for s in all_scores]
+    print("\nPatch Core Evaluation:")
+    print("Classification Report:\n", classification_report(all_labels, preds, digits=4, zero_division=0))    
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

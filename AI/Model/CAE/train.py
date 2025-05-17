@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torchvision import transforms
 import numpy as np
 import os
@@ -12,6 +12,7 @@ sys.path.append(current_dir)
 
 import AI.Model.CAE.evaluate as evaluate
 import AI.Model.CAE.model as autoencoder_model
+from AI.Model.CNN import train_v2 as cnn_train
 
 def train_autoencoder(model, train_loader, num_epochs=50, device='cpu'):
     criterion = nn.MSELoss()
@@ -72,40 +73,22 @@ def main():
     
     # 데이터 변환
     transform = transforms.Compose([
-        transforms.Resize((16, 16)), ## image size
+        transforms.Resize((16, 16)),
         transforms.ToTensor()
     ])
     
-    # 데이터셋 로드
-    normal_dataset = autoencoder_model.PacketImageDataset(
-        './Data/save/save_packet_to_byte_16/front_image', 
-        transform=transform,
-        is_flat_structure=True
-    )
+    normal_train = cnn_train.PacketImageDataset('./Data/byte_16/front_image/train', transform, is_flat_structure=True, label=0)
+    normal_test = cnn_train.PacketImageDataset('./Data/byte_16/front_image/test', transform, is_flat_structure=True, label=0)
+    attack_test = cnn_train.PacketImageDataset('./Data/attack_to_byte_16', transform, is_flat_structure=False, label=1)
 
-    # Attack 데이터셋 로드
-    attack_test_dataset = autoencoder_model.PacketImageDataset(
-        './Data/attack/attack_to_byte_16', 
-        transform=transform,
-        is_flat_structure=False
-    )
-    
-    # 데이터로더 생성
-    # 각 데이터셋을 학습/테스트용으로 분할
-    generator = torch.Generator().manual_seed(42)
+    min_len = min(len(normal_test), len(attack_test))
+    test_dataset = torch.utils.data.ConcatDataset([
+        Subset(normal_test, list(range(min_len))),
+        Subset(attack_test, list(range(min_len)))
+    ])
 
-    # Normal 데이터 분할
-    normal_train_size = int(0.8 * len(normal_dataset))
-    normal_test_size = len(normal_dataset) - normal_train_size
-    normal_train_dataset, normal_test_dataset = torch.utils.data.random_split(
-        normal_dataset, [normal_train_size, normal_test_size],
-        generator=generator
-    )
-
-    train_loader = DataLoader(normal_train_dataset, batch_size=1024*8, shuffle=True)
-    test_normal_loader = DataLoader(normal_test_dataset, batch_size=1024*8, shuffle=False)
-    test_attack_loader = DataLoader(attack_test_dataset, batch_size=1024*8, shuffle=False)
-
+    train_loader = DataLoader(normal_train, batch_size=512, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=512, shuffle=False)
 
     # 모델 초기화
     model = autoencoder_model.ConvAutoencoder().to(device)
@@ -113,47 +96,23 @@ def main():
     # 모델 학습
     train_losses = train_autoencoder(model, train_loader, num_epochs=50, device=device)
     
-    # 학습 그래프 그리기
-    evaluate.plot_training_loss(train_losses)
-    
-    # 재구성 예제 시각화
-    evaluate.plot_reconstruction(model, test_normal_loader, device)
-    
+    # save
+    os.makedirs('./AI/Model/CAE/Model', exist_ok=True)
+    torch.save(model.state_dict(), './AI/Model/CAE/Model/front_autoencoder.pth')
+
     # 임계값 계산
-    threshold = calculate_threshold(model, train_loader, device)
-    print(f"Anomaly threshold: {threshold:.4f}")
+    threshold = calculate_threshold(model, train_loader, device=device, percentile=95)
+    # save threshold
+    np.save('./AI/Model/CAE/Model/front_threshold.npy', threshold)
+
+    # 모델 평가
+    evaluate.evaluate_model(
+        model=model,
+        dataloader=test_loader,
+        device=device,
+        threshold=threshold
+    )
     
-    # 테스트 데이터 평가
-    normal_predictions, normal_scores = evaluate.evaluate_model(model, test_normal_loader, threshold, device)
-    attack_predictions, attack_scores = evaluate.evaluate_model(model, test_attack_loader, threshold, device)
-    
-    # 결과 출력
-    roc_auc = evaluate.plot_roc_curve(model, test_normal_loader, test_attack_loader, threshold, device)
-    
-    # 결과 출력
-    print("\nResults:")
-    print(f"ROC AUC: {roc_auc:.4f}")
-    print(f"Normal data detected as anomaly: {normal_predictions.mean()*100:.2f}%")
-    print(f"Attack data detected as anomaly: {attack_predictions.mean()*100:.2f}%")
-    
-    # 결과 저장
-    results = {
-        'roc_auc': roc_auc,
-        'threshold': threshold,
-        'normal_detection_rate': normal_predictions.mean(),
-        'attack_detection_rate': attack_predictions.mean(),
-    }
-    
-    import json
-    with open('detection_results.json', 'w') as f:
-        json.dump(results, f, indent=4)
-    
-    # 모델 저장
-    torch.save({
-        'model_state_dict': model.state_dict(),
-        'threshold': threshold,
-        'roc_auc': roc_auc,
-    }, 'autoencoder_model_16.pth')
     
 if __name__ == '__main__':
     main()

@@ -148,7 +148,6 @@ def evaluate(encoder, generator, dataloader, device):
             all_scores.extend(scores.cpu().numpy())
             all_labels.extend(labels.numpy())
 
-    print("\n📌 Classification Report:")
     preds = [1 if s > np.percentile(all_scores, 95) else 0 for s in all_scores]
     print(classification_report(all_labels, preds, digits=4))
 

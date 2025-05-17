@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 import os
 import sys
+from sklearn.metrics import classification_report
 
 current_dir = os.getcwd()  # C:\Users\gbwl3\Desktop\SourceCode\k8s_research
 sys.path.append(current_dir)
@@ -16,18 +17,29 @@ import AI.Model.CAE.train as train
 def evaluate_model(model, test_loader, threshold, device='cpu'):
     model.eval()
     anomaly_scores = []
+    all_labels = []
     
     with torch.no_grad():
-        for images_, _ in test_loader:
+        for images_, labels in test_loader:
             data = images_.to(device)
             outputs = model(data)
             
             # 재구성 오차 계산
             errors = torch.mean((data - outputs) ** 2, dim=(1,2,3))
             anomaly_scores.extend(errors.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
     
-    # 이상 탐지
-    predictions = (np.array(anomaly_scores) > threshold).astype(int)
+    anomaly_scores = np.array(anomaly_scores)
+    all_labels = np.array(all_labels)
+
+    if len(anomaly_scores) == 0 or len(all_labels) == 0:
+        print("🚨 No data to evaluate. Check test_loader or preprocessing.")
+        return [], []
+
+    predictions = (anomaly_scores > threshold).astype(int)
+
+    print("CAE Classification Report:")
+    print(classification_report(all_labels, predictions, digits=4, zero_division=0))
     return predictions, anomaly_scores
 
 def plot_training_loss(losses):

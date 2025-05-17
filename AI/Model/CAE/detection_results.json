@@ -1,6 +1,0 @@
-{
-    "roc_auc": 0.5656027642477162,
-    "threshold": 0.07836705520749092,
-    "normal_detection_rate": 0.05194889003613836,
-    "attack_detection_rate": 0.004874835309617918
-}
