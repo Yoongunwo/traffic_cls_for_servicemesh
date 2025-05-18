@@ -34,6 +34,35 @@ class FeatureCNN(nn.Module):
 
     def forward(self, x):
         return self.encoder(x)
+    
+class DeepFeatureCNN(nn.Module):
+    def __init__(self):
+        super(DeepFeatureCNN, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Conv2d(1, 32, 3, padding=1),  # [B, 32, 16, 16]
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 3, padding=1),  # [B, 64, 16, 16]
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(2),  # [B, 64, 8, 8]
+
+            nn.Conv2d(64, 128, 3, padding=1),  # [B, 128, 8, 8]
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.MaxPool2d(2),  # [B, 128, 4, 4]
+
+            nn.Conv2d(128, 256, 3, padding=1),  # [B, 256, 4, 4]
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((2, 2))  # [B, 256, 2, 2]
+        )
+        self.fc = nn.Linear(256 * 2 * 2, 128)
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = x.view(x.size(0), -1)
+        return self.fc(x)
 
 # ✅ 특징 추출 함수
 @torch.no_grad()
@@ -71,7 +100,8 @@ def main():
     train_loader = DataLoader(normal_train, batch_size=512, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=512, shuffle=False)
 
-    model = FeatureCNN().to(device)
+    # model = FeatureCNN().to(device)
+    model = DeepFeatureCNN().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     criterion = nn.MSELoss()
 
@@ -105,8 +135,10 @@ def main():
     print(classification_report(labels_test, preds, digits=4))
 
     os.makedirs("./AI/Model/OCSVM/Model", exist_ok=True)
-    torch.save(model.state_dict(), "./AI/Model/OCSVM/Model/front_ocsvm_cnn_epoch50.pth")
-    joblib.dump(clf, "./AI/Model/OCSVM/Model/front_ocsvm.pkl")
+    # torch.save(model.state_dict(), "./AI/Model/OCSVM/Model/front_ocsvm_cnn_epoch50.pth")
+    torch.save(model.state_dict(), "./AI/Model/OCSVM/Model/front_ocsvm_deep_cnn_epoch50.pth")
+    # joblib.dump(clf, "./AI/Model/OCSVM/Model/front_ocsvm.pkl")
+    joblib.dump(clf, "./AI/Model/OCSVM/Model/front_deep_ocsvm.pkl")
 
 if __name__ == '__main__':
     main()

@@ -14,23 +14,7 @@ current_dir = os.getcwd()
 sys.path.append(current_dir)
 
 from AI.Model.CNN import train_v2 as cnn_train
-
-# ✅ Teacher 모델 (기존 FeatureCNN)
-class FeatureCNN(nn.Module):
-    def __init__(self):
-        super(FeatureCNN, self).__init__()
-        self.encoder = nn.Sequential(
-            nn.Conv2d(1, 32, 3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(32, 64, 3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Flatten(),
-            nn.Linear(64 * 4 * 4, 128)
-        )
-    def forward(self, x):
-        return self.encoder(x)
+from AI.Model.OCSVM import train as ocs_train
 
 # ✅ Student 모델 (경량화 CNN)
 class TinyFeatureCNN(nn.Module):
@@ -44,7 +28,7 @@ class TinyFeatureCNN(nn.Module):
             nn.ReLU(),
             nn.MaxPool2d(2),
             nn.Flatten(),
-            nn.Linear(32 * 4 * 4, 64)
+            nn.Linear(32 * 4 * 4, 128)
         )
     def forward(self, x):
         return self.encoder(x)
@@ -122,12 +106,14 @@ def main():
     test_loader = DataLoader(test_dataset, batch_size=512, shuffle=False)
 
     # ✅ 모델 정의 및 KD 학습
-    teacher = FeatureCNN()
-    teacher.load_state_dict(torch.load('./AI/Model/OCSVM/Model/front_ocsvm_cnn_epoch50.pth', weights_only=True))
+    # teacher = ocs_train.FeatureCNN()
+    teacher = ocs_train.DeepFeatureCNN()
+    # teacher.load_state_dict(torch.load('./AI/Model/OCSVM/Model/front_ocsvm_cnn_epoch50.pth', weights_only=True))
+    teacher.load_state_dict(torch.load('./AI/Model/OCSVM/Model/front_ocsvm_deep_cnn_epoch50.pth', weights_only=True))
     teacher.eval()
 
     student = TinyFeatureCNN()
-    train_kd(student, teacher, train_loader, device)
+    train_kd(student, teacher, train_loader, device, epochs=100)
 
     # ✅ Feature 추출 및 One-Class SVM 학습
     feats_train, _ = extract_features(student, train_loader, device)
@@ -143,10 +129,10 @@ def main():
     print(classification_report(labels_test, preds, digits=4))
 
     os.makedirs('./AI/Model/KD_OCSVM/Model', exist_ok=True)                                                                                                                                             
-    torch.save(student.state_dict(), './AI/Model/KD_OCSVM/Model/tiny_cnn_student.pth')
-    joblib.dump(clf, './AI/Model/KD_OCSVM/Model/tiny_ocsvm.pkl')
+    torch.save(student.state_dict(), './AI/Model/KD_OCSVM/Model/tiny_deep_cnn_student.pth')
+    joblib.dump(clf, './AI/Model/KD_OCSVM/Model/tiny_deep_ocsvm.pkl')
 
-    evaluate('./AI/Model/KD_OCSVM/Model/tiny_cnn_student.pth', './AI/Model/KD_OCSVM/Model/tiny_ocsvm.pkl', test_loader, device)
+    evaluate('./AI/Model/KD_OCSVM/Model/tiny_deep_cnn_student.pth', './AI/Model/KD_OCSVM/Model/tiny_deep_ocsvm.pkl', test_loader, device)
 
 if __name__ == '__main__':
     main()                                                                                                               
