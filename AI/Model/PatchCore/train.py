@@ -11,7 +11,7 @@ from torchvision.models import resnet18, ResNet18_Weights
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, Dataset, Subset
 import numpy as np
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, roc_auc_score
 from sklearn.neighbors import NearestNeighbors
 import os
 from PIL import Image
@@ -95,6 +95,7 @@ def evaluate_patchcore(embedding_path, model_path, test_loader, device):
     preds = [1 if s > np.percentile(all_scores, 95) else 0 for s in all_scores]
     print("\nPatch Core Evaluation:")
     print("Classification Report:\n", classification_report(all_labels, preds, digits=4, zero_division=0))    
+    print("ROC AUC:", roc_auc_score(all_labels, preds))
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

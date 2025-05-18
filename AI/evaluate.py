@@ -2,7 +2,7 @@ import os
 import sys
 import numpy as np
 from sklearn import svm
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, roc_auc_score
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -67,6 +67,7 @@ def main():
     predictions = np.where(predictions == 1, 0, 1)  
     print("One Class SVM Predictions:")
     print(classification_report(labels_test, predictions, digits=4))
+    print("One Class SVM AUC:", roc_auc_score(labels_test, predictions))
 
     # # deep svdd
     featureCNN = svdd_train.FeatureCNN()
@@ -85,6 +86,7 @@ def main():
 
     print("Deep SVDD Predictions:")
     print(classification_report(labels_test, preds, digits=4))
+    print("Deep SVDD AUC:", roc_auc_score(labels_test, preds))
 
     # f-AnoGAN
     G = f_anogan_train.Generator()
@@ -146,17 +148,34 @@ def main():
         device=device,
         threshold=threshold
     )
+
+
     # CNN_BiLSTM_AE
+    transform = transforms.Compose([
+        transforms.Resize((16, 16)),
+        transforms.Grayscale(),
+        transforms.ToTensor(),
+        transforms.Lambda(lambda x: x.view(-1))  # ⬅️ flatten: (1,16,16) → (256,)
+    ])
+
+    normal_test = cnn_train.PacketImageDataset('./Data/byte_16/front_image/test', transform, is_flat_structure=True, label=0)
+    attack_test = cnn_train.PacketImageDataset('./Data/attack_to_byte_16', transform, is_flat_structure=False, label=1)
+    min_len = min(len(normal_test), len(attack_test))
+    test_dataset = torch.utils.data.ConcatDataset([
+        Subset(normal_test, list(range(min_len))),
+        Subset(attack_test, list(range(min_len)))
+    ])
+    test_loader = DataLoader(test_dataset, batch_size=2048, shuffle=False)
+    
     cnn_bilsm_ae = cnn_bilstm_ae_train.CNN_BiLSTM_Autoencoder(input_dim=256)
     cnn_bilsm_ae.load_state_dict(torch.load('./AI/Model/CNN_BiLSTM_AE/Model/front_cnn_bilstm_ae.pth', weights_only=True))
     cnn_bilsm_ae.eval()
     cnn_bilsm_ae.to(device)
 
     threshold = np.load('./AI/Model/CNN_BiLSTM_AE/Model/front_threshold.npy').item()
-
     cnn_bilstm_ae_train.evaluate(
         model=cnn_bilsm_ae,
-        test_loader=test_loader,
+        dataloader=test_loader,
         threshold=threshold,
         device=device,
     )

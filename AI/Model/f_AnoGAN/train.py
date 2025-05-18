@@ -11,7 +11,7 @@ from torchvision import transforms
 from torchvision.datasets import ImageFolder
 from torchvision.utils import save_image
 from torchvision.datasets.folder import default_loader
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, roc_auc_score
 import os
 import sys
 import numpy as np
@@ -150,6 +150,7 @@ def evaluate(encoder, generator, dataloader, device):
 
     preds = [1 if s > np.percentile(all_scores, 95) else 0 for s in all_scores]
     print(classification_report(all_labels, preds, digits=4))
+    print(f"ROC AUC: {roc_auc_score(all_labels, all_scores):.4f}")
 
 def calculate_threshold(generator, encoder, dataloader, device, lambda_=0.1):
     scores = []
@@ -215,7 +216,7 @@ def main():
     )
 
     evaluate(E, G, test_loader, device)
-    threshold = calculate_threshold(G, E, test_loader, device)
+    threshold = calculate_threshold(G, E, train_loader, device)
     save_threshold(threshold, path="./AI/Model/f_AnoGAN/Model/front_threshold.npy")
 
 if __name__ == '__main__':

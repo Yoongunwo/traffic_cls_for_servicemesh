@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset
 from PIL import Image
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, roc_auc_score
 from torchvision import transforms
 import numpy as np
 import os
@@ -73,6 +73,7 @@ def evaluate(model, dataloader, threshold, device):
     preds = (np.array(scores) > threshold).astype(int)
     print("\n CNN-BiLSM-AE Classification Report:")
     print(classification_report(labels, preds, digits=4, zero_division=0))
+    print(f"ROC AUC: {roc_auc_score(labels, scores):.4f}")
 
 # ✅ 실행 메인
 def main():

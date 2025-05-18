@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 import os
 import sys
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, roc_auc_score
 
 current_dir = os.getcwd()  # C:\Users\gbwl3\Desktop\SourceCode\k8s_research
 sys.path.append(current_dir)
@@ -40,6 +40,7 @@ def evaluate_model(model, test_loader, threshold, device='cpu'):
 
     print("CAE Classification Report:")
     print(classification_report(all_labels, predictions, digits=4, zero_division=0))
+    print("CAE AUC:", roc_auc_score(all_labels, anomaly_scores))
     return predictions, anomaly_scores
 
 def plot_training_loss(losses):

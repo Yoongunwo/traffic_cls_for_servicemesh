@@ -7,7 +7,7 @@ from PIL import Image
 import os
 import sys
 import numpy as np
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, roc_auc_score
 
 
 # 현재 디렉토리 패스 추가
@@ -120,9 +120,11 @@ def calculate_threshold(model, test_loader, device):
     np.save(threshold_path, threshold)
     print(f"✅ Threshold saved to {threshold_path}: {threshold:.6f}")
 
-def evaluate_attention_cae(model_path, test_loader, device, threshold=None):
+def evaluate_attention_cae(model_path, threshold_path, test_loader, device):
     model = AttentionCAE().to(device)
     model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+    threshold = np.load(threshold_path).item()
+
     model.eval()
 
     all_scores = []
@@ -146,6 +148,7 @@ def evaluate_attention_cae(model_path, test_loader, device, threshold=None):
     preds = (all_scores > threshold).astype(int)
     print("\nCAE-Attention Classification Report:")
     print(classification_report(all_labels, preds, digits=4, zero_division=0))
+    print(f"ROC AUC: {roc_auc_score(all_labels, all_scores):.4f}")
 
 # ✅ 메인 실행
 def main():
