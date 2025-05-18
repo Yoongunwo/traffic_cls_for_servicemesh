@@ -29,6 +29,8 @@ from AI.Model.CAE import evaluate as cae_evaluate
 
 from AI.Model.CNN_BiLSTM_AE import train as cnn_bilstm_ae_train
 
+from AI.Model.KD_OCSVM import train as kd_ocsvm_train
+
 import matplotlib.pyplot as plt
 
 
@@ -148,6 +150,21 @@ def main():
         device=device,
         threshold=threshold
     )
+
+    # KD-OCSVM
+    kd_ocsvm = kd_ocsvm_train.TinyFeatureCNN()
+    kd_ocsvm.load_state_dict(torch.load('./AI/Model/KD_OCSVM/Model/tiny_cnn_student.pth', weights_only=True))
+    kd_ocsvm.to(device)
+    kd_ocsvm.eval()
+
+    feats_test, labels_test = kd_ocsvm_train.extract_features(kd_ocsvm, test_loader, device)
+    oneclassSVM = svm.OneClassSVM(kernel='rbf', gamma='scale', nu=0.1)
+    oneclassSVM = joblib.load('./AI/Model/KD_OCSVM/Model/tiny_ocsvm.pkl')
+    predictions = oneclassSVM.predict(feats_test)
+    predictions = np.where(predictions == 1, 0, 1)
+    print("KD-OCSVM Predictions:")
+    print(classification_report(labels_test, predictions, digits=4))
+    print("KD-OCSVM AUC:", roc_auc_score(labels_test, predictions), "\n")
 
 
     # CNN_BiLSTM_AE
