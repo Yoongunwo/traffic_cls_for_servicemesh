@@ -78,12 +78,25 @@ def evaluate(kd_model_path, model_path, test_loader, device):
     feats_test, labels_test = extract_features(student, test_loader, device)
     clf = joblib.load(model_path)
     preds = clf.predict(feats_test)
-    preds = [0 if p == 1 else 1 for p in preds]  # 이상이면 1
+    preds = [0 if p == 1 else 1 for p in preds]  # 1 : anomaly, 0 : normal
 
-    print("\n✅ KD + Tiny-CNN + OC-SVM test 결과")
+    print("\n✅ KD + Tiny-CNN + OC-SVM:")
     print(classification_report(labels_test, preds, digits=4))
 
-# ✅ 메인 실행
+
+TRAIN_DATASET = './Data/cic_data/Wednesday-workingHours/benign_train'
+TEST_DATASET = './Data/cic_data/Wednesday-workingHours/benign_test'
+ATTACK_DATASET = './Data/cic_data/Wednesday-workingHours/attack'
+
+TEACHER_MODEL_PATH = './AI/Model/OCSVM/Model/cic_ocsvm_deep_cnn_epoch50.pth'
+
+MODEL_DIR = './AI/Model/KD_OCSVM/Model'
+CNN_MODEL_PATH = './AI/Model/KD_OCSVM/Model/cic_tiny_deep_cnn_student.pth'
+OCSVM_MODEL_PATH = './AI/Model/KD_OCSVM/Model/cic_tiny_deep_ocsvm.pkl'
+
+BATCH_SIZE = 4096 * 8
+EPOCHS = 50
+
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     transform = transforms.Compose([
@@ -92,9 +105,30 @@ def main():
     ])
 
     # ✅ 데이터 로딩
-    normal_train = cnn_train.PacketImageDataset('./Data/byte_16/front_image/train', transform, is_flat_structure=True, label=0)
-    normal_test = cnn_train.PacketImageDataset('./Data/byte_16/front_image/test', transform, is_flat_structure=True, label=0)
-    attack_test = cnn_train.PacketImageDataset('./Data/attack_to_byte_16', transform, is_flat_structure=False, label=1)
+    normal_train = cnn_train.PacketImageDataset(TRAIN_DATASET, transform, is_flat_structure=True, label=0)
+    
+    train_loader = DataLoader(normal_train, batch_size=BATCH_SIZE, shuffle=True)
+
+    # ✅ 모델 정의 및 KD 학습
+    teacher = ocs_train.DeepFeatureCNN()
+    teacher.load_state_dict(torch.load(TEACHER_MODEL_PATH, weights_only=True))
+    teacher.eval()
+
+    student = TinyFeatureCNN()
+    train_kd(student, teacher, train_loader, device, epochs=EPOCHS)
+
+    feats_train, _ = extract_features(student, train_loader, device)
+
+    clf = svm.OneClassSVM(kernel='rbf', gamma='scale', nu=0.1)
+    clf.fit(feats_train)
+
+    os.makedirs(MODEL_DIR, exist_ok=True)                                                                                                                                             
+    torch.save(student.state_dict(), CNN_MODEL_PATH)
+    joblib.dump(clf, OCSVM_MODEL_PATH)
+
+
+    normal_test = cnn_train.PacketImageDataset(TEST_DATASET, transform, is_flat_structure=True, label=0)
+    attack_test = cnn_train.PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=False, label=1)
 
     min_len = min(len(normal_test), len(attack_test))
     test_dataset = torch.utils.data.ConcatDataset([
@@ -102,37 +136,16 @@ def main():
         Subset(attack_test, list(range(min_len)))
     ])
 
-    train_loader = DataLoader(normal_train, batch_size=512, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=512, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-    # ✅ 모델 정의 및 KD 학습
-    # teacher = ocs_train.FeatureCNN()
-    teacher = ocs_train.DeepFeatureCNN()
-    # teacher.load_state_dict(torch.load('./AI/Model/OCSVM/Model/front_ocsvm_cnn_epoch50.pth', weights_only=True))
-    teacher.load_state_dict(torch.load('./AI/Model/OCSVM/Model/front_ocsvm_deep_cnn_epoch50.pth', weights_only=True))
-    teacher.eval()
-
-    student = TinyFeatureCNN()
-    train_kd(student, teacher, train_loader, device, epochs=100)
-
-    # ✅ Feature 추출 및 One-Class SVM 학습
-    feats_train, _ = extract_features(student, train_loader, device)
     feats_test, labels_test = extract_features(student, test_loader, device)
 
-    clf = svm.OneClassSVM(kernel='rbf', gamma='scale', nu=0.1)
-    clf.fit(feats_train)
 
     preds = clf.predict(feats_test)
     preds = [0 if p == 1 else 1 for p in preds]  # 이상이면 1
 
     print("\n✅ KD + Tiny-CNN + OC-SVM 결과")                                                               
     print(classification_report(labels_test, preds, digits=4))
-
-    os.makedirs('./AI/Model/KD_OCSVM/Model', exist_ok=True)                                                                                                                                             
-    torch.save(student.state_dict(), './AI/Model/KD_OCSVM/Model/tiny_deep_cnn_student.pth')
-    joblib.dump(clf, './AI/Model/KD_OCSVM/Model/tiny_deep_ocsvm.pkl')
-
-    evaluate('./AI/Model/KD_OCSVM/Model/tiny_deep_cnn_student.pth', './AI/Model/KD_OCSVM/Model/tiny_deep_ocsvm.pkl', test_loader, device)
 
 if __name__ == '__main__':
     main()                                                                                                               
