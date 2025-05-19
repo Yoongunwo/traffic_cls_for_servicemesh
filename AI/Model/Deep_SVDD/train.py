@@ -53,6 +53,17 @@ def extract_features(model, dataloader, device):
     return np.array(feats), np.array(labels)
 
 # ✅ 메인 함수
+TRAIN_DATASET = './Data/cic_data/Wednesday-workingHours/benign_train'
+TEST_DATASET = './Data/cic_data/Wednesday-workingHours/benign_test'
+ATTACK_DATASET = './Data/cic_data/Wednesday-workingHours/attack'
+
+MODEL_DIR = './AI/Model/Deep_SVDD/Model'
+CNN_MODEL_PATH = './AI/Model/Deep_SVDD/cic_deep_svdd_model_epoch50.pth'
+CENTER_PATH = './AI/Model/Deep_SVDD/cic_deep_svdd_center.npy'
+THRESHOLD_PATH = './AI/Model/Deep_SVDD/cic_deep_svdd_threshold.npy'
+
+
+BATCH_SIZE = 4096 * 8
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -63,18 +74,9 @@ def main():
     ])
 
     # ✅ 데이터 로딩
-    normal_train = cnn_train.PacketImageDataset('./Data/byte_16/front_image/train', transform, is_flat_structure=True, label=0)
-    normal_test = cnn_train.PacketImageDataset('./Data/byte_16/front_image/test', transform, is_flat_structure=True, label=0)
-    attack_test = cnn_train.PacketImageDataset('./Data/attack_to_byte_16', transform, is_flat_structure=False, label=1)
+    normal_train = cnn_train.PacketImageDataset(TRAIN_DATASET, transform, is_flat_structure=True, label=0)
 
-    min_len = min(len(normal_test), len(attack_test))
-    test_dataset = torch.utils.data.ConcatDataset([
-        Subset(normal_test, list(range(min_len))),
-        Subset(attack_test, list(range(min_len)))
-    ])
-
-    train_loader = DataLoader(normal_train, batch_size=512, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=512, shuffle=False)
+    train_loader = DataLoader(normal_train, batch_size=BATCH_SIZE, shuffle=False)
 
     model = FeatureCNN().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
@@ -99,20 +101,32 @@ def main():
 
     # ✅ 특징 추출
     feats_train, _ = extract_features(model, train_loader, device)
-    feats_test, labels_test = extract_features(model, test_loader, device)
-
+    
     # ✅ Deep SVDD (중심 거리 기반)
     print("\n🔹 Deep SVDD")
     center = feats_train.mean(axis=0)
+
+    normal_test = cnn_train.PacketImageDataset(TEST_DATASET, transform, is_flat_structure=True, label=0)
+    attack_test = cnn_train.PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=True, label=1)
+
+    min_len = min(len(normal_test), len(attack_test))
+    test_dataset = torch.utils.data.ConcatDataset([
+        Subset(normal_test, list(range(min_len))),
+        Subset(attack_test, list(range(min_len)))
+    ])
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+
+    feats_test, labels_test = extract_features(model, test_loader, device)
+
     dists = np.linalg.norm(feats_test - center, axis=1)
     threshold = np.percentile(dists, 95)
     preds = (dists > threshold).astype(int)
     print(classification_report(labels_test, preds, digits=4))
 
-    os.makedirs("./AI/Model/Deep_SVDD/Model", exist_ok=True)
-    torch.save(model.state_dict(), "./AI/Model/Deep_SVDD/front_deep_svdd_model.pth")
-    np.save("./AI/Model/Deep_SVDD/front_deep_svdd_center.npy", center)
-    np.save("./AI/Model/Deep_SVDD/front_deep_svdd_threshold.npy", threshold)
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    torch.save(model.state_dict(), CNN_MODEL_PATH)
+    np.save(CENTER_PATH, center)
+    np.save(THRESHOLD_PATH, threshold)
 
 if __name__ == '__main__':
     main()

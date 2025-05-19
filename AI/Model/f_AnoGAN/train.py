@@ -109,8 +109,8 @@ def train_gan(generator, discriminator, dataloader, device, latent_dim=100, num_
 
         print(f"Epoch [{epoch+1}/{num_epochs}], D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
 
-    torch.save(G.state_dict(), "./AI/Model/f_AnoGAN/Model/front_generator_epoch50.pth")
-    torch.save(D.state_dict(), "./AI/Model/f_AnoGAN/Model/front_discriminator_epoch50.pth")
+    torch.save(G.state_dict(), GENERATOR_MODEL_PATH)
+    torch.save(D.state_dict(), DISCRIMINATOR_MODEL_PATH)
 
 def train_encoder(encoder, generator, dataloader, device, latent_dim=100, num_epochs=50):
     E, G = encoder.to(device), generator.to(device)
@@ -130,7 +130,7 @@ def train_encoder(encoder, generator, dataloader, device, latent_dim=100, num_ep
 
         print(f"[Encoder] Epoch {epoch+1}/{num_epochs}, Loss: {total_loss / len(dataloader):.6f}")
 
-    torch.save(E.state_dict(), "./AI/Model/f_AnoGAN/Model/front_encoder_epoch50.pth")
+    torch.save(E.state_dict(), ENCODER_MODEL_PATH)
 
 def evaluate(encoder, generator, dataloader, device):
     encoder.eval()
@@ -171,12 +171,24 @@ def calculate_threshold(generator, encoder, dataloader, device, lambda_=0.1):
     print(f"📌 Threshold (mean + 3std): {threshold:.6f}")
     return threshold
 
-def save_threshold(threshold, path="./AI/Model/f_AnoGAN/Model/front_threshold.npy"):
+def save_threshold(threshold, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     np.save(path, np.array([threshold]))
 
-def load_threshold(path="./AI/Model/f_AnoGAN/Model/front_threshold.npy"):
+def load_threshold(path):
     return float(np.load(path)[0])
+
+TRAIN_DATASET = './Data/cic_data/Wednesday-workingHours/benign_train'
+TEST_DATASET = './Data/cic_data/Wednesday-workingHours/benign_test'
+ATTACK_DATASET = './Data/cic_data/Wednesday-workingHours/attack'
+
+MODEL_DIR = './AI/Model/f_AnoGAN/Model'
+ENCODER_MODEL_PATH =  './AI/Model/f_AnoGAN/Model/cic_encoder_epoch50.pth'
+GENERATOR_MODEL_PATH = './AI/Model/f_AnoGAN/cic_generator_epoch50.pth'
+DISCRIMINATOR_MODEL_PATH = './AI/Model/f_AnoGAN/cic_discriminator_epoch50.pth'
+THRESHOLD_PATH = './AI/Model/f_AnoGAN/Model/cic_threshold.npy'
+
+BATCH_SIZE = 4096 * 16
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -186,11 +198,9 @@ def main():
         transforms.ToTensor(),
         transforms.Normalize([0.5], [0.5])
     ])
+    normal_train = cnn_train.PacketImageDataset(TRAIN_DATASET, transform, is_flat_structure=True, label=0)
 
-    normal_train = cnn_train.PacketImageDataset(
-        './Data/byte_16/front_image/train', transform=transform, is_flat_structure=True
-    )
-    train_loader = DataLoader(normal_train, batch_size=1024, shuffle=True)
+    train_loader = DataLoader(normal_train, batch_size=BATCH_SIZE, shuffle=False)
 
     G = Generator()
     D = Discriminator()
@@ -198,26 +208,23 @@ def main():
 
     train_gan(G, D, train_loader, device)
     train_encoder(E, G, train_loader, device)
+    
+    normal_test = cnn_train.PacketImageDataset(TEST_DATASET, transform, is_flat_structure=True, label=0)
+    attack_test = cnn_train.PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=True, label=1)
 
-    normal_test_dataset = cnn_train.PacketImageDataset('./Data/byte_16/front_image/test', transform=transform, is_flat_structure=True)
-    attack_test_dataset = cnn_train.load_attack_subset('./Data/attack_to_byte_16', 'test', transform)
+    min_len = min(len(normal_test), len(attack_test))
 
-    min_len = min(len(normal_test_dataset), len(attack_test_dataset))
+    min_len = min(len(normal_test), len(attack_test))
+    test_dataset = torch.utils.data.ConcatDataset([
+        Subset(normal_test, list(range(min_len))),
+        Subset(attack_test, list(range(min_len)))
+    ])
 
-    normal_subset = Subset(normal_test_dataset, list(range(min_len)))
-    attack_subset = Subset(attack_test_dataset, list(range(min_len)))
-
-    balanced_test_dataset = torch.utils.data.ConcatDataset([normal_subset, attack_subset])
-
-    test_loader = DataLoader(
-        balanced_test_dataset,
-        batch_size=1024,
-        shuffle=False
-    )
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
     evaluate(E, G, test_loader, device)
     threshold = calculate_threshold(G, E, train_loader, device)
-    save_threshold(threshold, path="./AI/Model/f_AnoGAN/Model/front_threshold.npy")
+    save_threshold(threshold, path=THRESHOLD_PATH)
 
 if __name__ == '__main__':
     main()

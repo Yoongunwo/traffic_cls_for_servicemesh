@@ -66,6 +66,16 @@ def calculate_threshold(model, train_loader, device='cpu', percentile=95):
     threshold = np.percentile(reconstruction_errors, percentile)
     return threshold
 
+TRAIN_DATASET = './Data/cic_data/Wednesday-workingHours/benign_train'
+TEST_DATASET = './Data/cic_data/Wednesday-workingHours/benign_test'
+ATTACK_DATASET = './Data/cic_data/Wednesday-workingHours/attack'
+
+MODEL_DIR = './AI/Model/CAE/Model'
+CNN_MODEL_PATH = './AI/Model/CAE/Model/cic_autoencoder_epoch50.pth'
+THRESH_HOLD_PATH = './AI/Model/CAE/Model/cic_autoencoder_threshold.npy'
+
+BATCH_SIZE = 4096*32
+
 def main():
     # 설정
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -77,18 +87,9 @@ def main():
         transforms.ToTensor()
     ])
     
-    normal_train = cnn_train.PacketImageDataset('./Data/byte_16/front_image/train', transform, is_flat_structure=True, label=0)
-    normal_test = cnn_train.PacketImageDataset('./Data/byte_16/front_image/test', transform, is_flat_structure=True, label=0)
-    attack_test = cnn_train.PacketImageDataset('./Data/attack_to_byte_16', transform, is_flat_structure=False, label=1)
+    normal_train = cnn_train.PacketImageDataset(TRAIN_DATASET, transform, is_flat_structure=True, label=0)
 
-    min_len = min(len(normal_test), len(attack_test))
-    test_dataset = torch.utils.data.ConcatDataset([
-        Subset(normal_test, list(range(min_len))),
-        Subset(attack_test, list(range(min_len)))
-    ])
-
-    train_loader = DataLoader(normal_train, batch_size=512, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=512, shuffle=False)
+    train_loader = DataLoader(normal_train, batch_size=BATCH_SIZE, shuffle=False)
 
     # 모델 초기화
     model = autoencoder_model.ConvAutoencoder().to(device)
@@ -97,18 +98,28 @@ def main():
     train_losses = train_autoencoder(model, train_loader, num_epochs=50, device=device)
     
     # save
-    os.makedirs('./AI/Model/CAE/Model', exist_ok=True)
-    torch.save(model.state_dict(), './AI/Model/CAE/Model/front_autoencoder.pth')
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    torch.save(model.state_dict(), CNN_MODEL_PATH)
 
     # 임계값 계산
     threshold = calculate_threshold(model, train_loader, device=device, percentile=95)
     # save threshold
-    np.save('./AI/Model/CAE/Model/front_threshold.npy', threshold)
+    np.save(THRESH_HOLD_PATH, threshold)
+
+    normal_test = cnn_train.PacketImageDataset(TEST_DATASET, transform, is_flat_structure=True, label=0)
+    attack_test = cnn_train.PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=True, label=1)
+
+    min_len = min(len(normal_test), len(attack_test))
+    test_dataset = torch.utils.data.ConcatDataset([
+        Subset(normal_test, list(range(min_len))),
+        Subset(attack_test, list(range(min_len)))
+    ])
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
     # 모델 평가
     evaluate.evaluate_model(
         model=model,
-        dataloader=test_loader,
+        test_loader=test_loader,
         device=device,
         threshold=threshold
     )

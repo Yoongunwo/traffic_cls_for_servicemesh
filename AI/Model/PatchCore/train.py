@@ -97,6 +97,16 @@ def evaluate_patchcore(embedding_path, model_path, test_loader, device):
     print("Classification Report:\n", classification_report(all_labels, preds, digits=4, zero_division=0))    
     print("ROC AUC:", roc_auc_score(all_labels, preds))
 
+TRAIN_DATASET = './Data/cic_data/Wednesday-workingHours/benign_train'
+TEST_DATASET = './Data/cic_data/Wednesday-workingHours/benign_test'
+ATTACK_DATASET = './Data/cic_data/Wednesday-workingHours/attack'
+
+MODEL_DIR = './AI/Model/PatchCore/Model'
+PATCHCORE_MODEL_PATH =  './PatchCore/Model/cic_feature_bank.npy'
+NN_MODEL_PATH = './PatchCore/Model/cic_nn_model.pkl'
+
+BATCH_SIZE = 4096 * 16
+
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     transform = transforms.Compose([
@@ -104,17 +114,9 @@ def main():
         transforms.ToTensor(),
     ])
 
-    # ✅ Load dataset
-    normal_train = PacketImageDataset("./Data/byte_16/front_image/train", transform, is_flat_structure=True, label=0)
-    normal_test = PacketImageDataset("./Data/byte_16/jenkins/test", transform, is_flat_structure=True, label=0)
-    attack_test = PacketImageDataset("./Data/attack_to_byte_16", transform, is_flat_structure=False, label=1)
+    normal_train = cnn_train.PacketImageDataset(TRAIN_DATASET, transform, is_flat_structure=True, label=0)
 
-    min_len = min(len(normal_test), len(attack_test))
-    test_dataset = torch.utils.data.ConcatDataset([
-        Subset(normal_test, list(range(min_len))),
-        Subset(attack_test, list(range(min_len)))
-    ])
-    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+    train_loader = DataLoader(normal_train, batch_size=BATCH_SIZE, shuffle=False)
 
     # ✅ Feature Extractor
     model = FeatureExtractor().to(device)
@@ -122,7 +124,6 @@ def main():
 
     # ✅ Extract Training Embeddings
     all_patches = []
-    train_loader = DataLoader(normal_train, batch_size=64, shuffle=False)
     with torch.no_grad():
         for x, _ in train_loader:
             x = x.to(device)
@@ -134,15 +135,29 @@ def main():
     print("✅ Feature bank shape:", embeddings.shape)
 
     # ✅ Save Feature Bank
-    os.makedirs("./patchcore_model", exist_ok=True)
-    np.save("./patchcore_model/feature_bank.npy", embeddings)
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    np.save(PATCHCORE_MODEL_PATH, embeddings)
 
     # ✅ Fit and Save Nearest Neighbors
     nn_model = NearestNeighbors(n_neighbors=1, algorithm='auto')
     nn_model.fit(embeddings)
-    joblib.dump(nn_model, "./patchcore_model/nn_model.pkl")
+    joblib.dump(nn_model, NN_MODEL_PATH)
 
     # ✅ Evaluation
+
+    normal_test = cnn_train.PacketImageDataset(TEST_DATASET, transform, is_flat_structure=True, label=0)
+    attack_test = cnn_train.PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=True, label=1)
+
+    min_len = min(len(normal_test), len(attack_test))
+
+    min_len = min(len(normal_test), len(attack_test))
+    test_dataset = torch.utils.data.ConcatDataset([
+        Subset(normal_test, list(range(min_len))),
+        Subset(attack_test, list(range(min_len)))
+    ])
+
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+
     all_labels, all_scores = [], []
     with torch.no_grad():
         for x, labels in test_loader:

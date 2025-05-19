@@ -75,7 +75,16 @@ def evaluate(model, dataloader, threshold, device):
     print(classification_report(labels, preds, digits=4, zero_division=0))
     print(f"ROC AUC: {roc_auc_score(labels, scores):.4f}")
 
-# ✅ 실행 메인
+TRAIN_DATASET = './Data/cic_data/Wednesday-workingHours/benign_train'
+TEST_DATASET = './Data/cic_data/Wednesday-workingHours/benign_test'
+ATTACK_DATASET = './Data/cic_data/Wednesday-workingHours/attack'
+
+MODEL_DIR = './AI/Model/CNN_BiLSTM_AE/Model'
+MODEL_PATH = './AI/Model/CNN_BiLSTM_AE/Model/cic_cnn_bilstm_ae_epoch50.pth'
+THRESHOLD_PATH = './AI/Model/CNN_BiLSTM_AE/Model/cic_threshold.npy'
+
+BATCH_SIZE = 4096
+
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     transform = transforms.Compose([
@@ -85,13 +94,9 @@ def main():
         transforms.Lambda(lambda x: x.view(-1))  # ⬅️ flatten: (1,16,16) → (256,)
     ])
 
-    normal_train = cnn_train.PacketImageDataset(
-        './Data/byte_16/front_image/train', 
-        transform=transform, 
-        is_flat_structure=True
+    normal_train = cnn_train.PacketImageDataset(TRAIN_DATASET, transform, is_flat_structure=True, label=0)
 
-    )
-    train_loader = DataLoader(normal_train, batch_size=1024, shuffle=True)
+    train_loader = DataLoader(normal_train, batch_size=BATCH_SIZE, shuffle=False)
 
     # 모델 학습
     model = CNN_BiLSTM_Autoencoder(input_dim=256)
@@ -108,27 +113,20 @@ def main():
     threshold = np.mean(losses) + 3 * np.std(losses)
     print(f"\n✅ Threshold: {threshold:.6f}")
 
-    normal_test_dataset = cnn_train.PacketImageDataset('./Data/byte_16/front_image/test', transform=transform, is_flat_structure=True)
-    attack_test_dataset = cnn_train.load_attack_subset('./Data/attack_to_byte_16', 'test', transform)
+    normal_test = cnn_train.PacketImageDataset(TEST_DATASET, transform, is_flat_structure=True, label=0)
+    attack_test = cnn_train.PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=True, label=1)
 
-    min_len = min(len(normal_test_dataset), len(attack_test_dataset))
-
-    normal_subset = Subset(normal_test_dataset, list(range(min_len)))
-    attack_subset = Subset(attack_test_dataset, list(range(min_len)))
-
-    balanced_test_dataset = torch.utils.data.ConcatDataset([normal_subset, attack_subset])
-
-    test_loader = DataLoader(
-        balanced_test_dataset,
-        batch_size=1024,
-        shuffle=False
-    )
-
+    min_len = min(len(normal_test), len(attack_test))
+    test_dataset = torch.utils.data.ConcatDataset([
+        Subset(normal_test, list(range(min_len))),
+        Subset(attack_test, list(range(min_len)))
+    ])
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
     # save
     # model save
-    os.makedirs('./AI/Model/CNN_BiLSTM_AE/Model', exist_ok=True)
-    torch.save(model.state_dict(), './AI/Model/CNN_BiLSTM_AE/Model/front_cnn_bilstm_ae.pth')
-    np.save('./AI/Model/CNN_BiLSTM_AE/Model/front_threshold.npy', np.array([threshold]))
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    torch.save(model.state_dict(), MODEL_PATH)
+    np.save(THRESHOLD_PATH, np.array([threshold]))
 
     # 평가
     evaluate(model, test_loader, threshold, device)

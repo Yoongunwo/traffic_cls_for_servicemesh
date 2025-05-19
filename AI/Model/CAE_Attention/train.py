@@ -14,7 +14,6 @@ from sklearn.metrics import classification_report, roc_auc_score
 current_dir = os.getcwd()
 sys.path.append(current_dir)
 
-from AI.Model.CNN.train import PacketImageDataset  # 기존에 정의한 Dataset 사용
 import AI.Model.CNN.train_v2 as cnn_train
 
 # ✅ CBAM Attention Block 정의
@@ -97,10 +96,9 @@ def train_cae(model, dataloader, device, num_epochs=30, lr=0.001):
         print(f"Epoch [{epoch+1}/{num_epochs}] Loss: {avg_loss:.6f}")
 
     # ✅ 모델 저장
-    os.makedirs("./AI/Model/CAE_Attention/Model", exist_ok=True)
-    model_path = "./AI/Model/CAE_Attention/Model/front_attention_cae.pth"
-    torch.save(model.state_dict(), model_path)
-    print(f"\n✅ Model saved to {model_path}")
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    torch.save(model.state_dict(), MODEL_PATH)
+    print(f"\n✅ Model saved to {MODEL_PATH}")
 
 def calculate_threshold(model, test_loader, device):
     # ✅ Threshold 계산 및 저장
@@ -116,9 +114,8 @@ def calculate_threshold(model, test_loader, device):
             all_scores.extend(loss.cpu().numpy())
 
     threshold = np.percentile(np.array(all_scores), 95)
-    threshold_path = "./AI/Model/CAE_Attention/Model/front_threshold_attention_cae.npy"
-    np.save(threshold_path, threshold)
-    print(f"✅ Threshold saved to {threshold_path}: {threshold:.6f}")
+    np.save(THRESHOLD_PATH, threshold)
+    print(f"✅ Threshold saved to {THRESHOLD_PATH}: {threshold:.6f}")
 
 def evaluate_attention_cae(model_path, threshold_path, test_loader, device):
     model = AttentionCAE().to(device)
@@ -150,7 +147,16 @@ def evaluate_attention_cae(model_path, threshold_path, test_loader, device):
     print(classification_report(all_labels, preds, digits=4, zero_division=0))
     print(f"ROC AUC: {roc_auc_score(all_labels, all_scores):.4f}")
 
-# ✅ 메인 실행
+TRAIN_DATASET = './Data/cic_data/Wednesday-workingHours/benign_train'
+TEST_DATASET = './Data/cic_data/Wednesday-workingHours/benign_test'
+ATTACK_DATASET = './Data/cic_data/Wednesday-workingHours/attack'
+
+MODEL_DIR = './AI/Model/CAE_Attention/Model'
+MODEL_PATH = './AI/Model/CAE_Attention/Model/cic_attention_cae.pth'
+THRESHOLD_PATH = './AI/Model/CAE_Attention/Model/cic_threshold_attention_cae.npy'
+
+BATCH_SIZE = 4096*16
+
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -160,35 +166,29 @@ def main():
         transforms.ToTensor()
     ])
 
-    normal_train = PacketImageDataset(
-        './Data/byte_16/front_image/train', transform=transform, is_flat_structure=True
-    )
+    normal_train = cnn_train.PacketImageDataset(TRAIN_DATASET, transform, is_flat_structure=True, label=0)
 
-    train_loader = DataLoader(normal_train, batch_size=1024, shuffle=True)
+    train_loader = DataLoader(normal_train, batch_size=BATCH_SIZE, shuffle=True)
     model = AttentionCAE()
     train_cae(model, train_loader, device, num_epochs=50)
 
-    normal_test = cnn_train.PacketImageDataset(
-        './Data/byte_16/front_image/val', 
-        transform, 
-        is_flat_structure=True, 
-        label=0
-    )
-    attack_test = cnn_train.PacketImageDataset(
-        './Data/attack_to_byte_16', 
-        transform, 
-        is_flat_structure=False, 
-        label=1
-    )
+    normal_test = cnn_train.PacketImageDataset(TEST_DATASET, transform, is_flat_structure=True, label=0)
+    attack_test = cnn_train.PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=True, label=1)
 
     min_len = min(len(normal_test), len(attack_test))
     test_dataset = torch.utils.data.ConcatDataset([
         Subset(normal_test, list(range(min_len))),
         Subset(attack_test, list(range(min_len)))
     ])
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-    test_loader = DataLoader(test_dataset, batch_size=512, shuffle=False)
     calculate_threshold(model, test_loader, device)
+    evaluate_attention_cae(
+        model_path=MODEL_PATH,
+        threshold_path=THRESHOLD_PATH,
+        test_loader=test_loader,
+        device=device
+    )
 
 if __name__ == '__main__':
     main()

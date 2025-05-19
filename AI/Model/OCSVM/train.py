@@ -78,6 +78,16 @@ def extract_features(model, dataloader, device):
 
 # ✅ 메인 함수
 
+TRAIN_DATASET = './Data/cic_data/Wednesday-workingHours/benign_train'
+TEST_DATASET = './Data/cic_data/Wednesday-workingHours/benign_test'
+ATTACK_DATASET = './Data/cic_data/Wednesday-workingHours/attack'
+
+MODEL_DIR = './AI/Model/OCSVM/Model'
+CNN_MODEL_PATH = './AI/Model/OCSVM/Model/cic_ocsvm_deep_cnn_epoch50.pth'
+OCSVM_MODEL_PATH = './AI/Model/OCSVM/Model/cic_deep_ocsvm.pkl'
+
+BATCH_SIZE = 4096*8
+
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -86,19 +96,10 @@ def main():
         transforms.ToTensor()
     ])
 
-    # ✅ 데이터 로딩
-    normal_train = cnn_train.PacketImageDataset('./Data/byte_16/front_image/train', transform, is_flat_structure=True, label=0)
-    normal_test = cnn_train.PacketImageDataset('./Data/byte_16/front_image/test', transform, is_flat_structure=True, label=0)
-    attack_test = cnn_train.PacketImageDataset('./Data/attack_to_byte_16', transform, is_flat_structure=False, label=1)
 
-    min_len = min(len(normal_test), len(attack_test))
-    test_dataset = torch.utils.data.ConcatDataset([
-        Subset(normal_test, list(range(min_len))),
-        Subset(attack_test, list(range(min_len)))
-    ])
+    normal_train = cnn_train.PacketImageDataset(TRAIN_DATASET, transform, is_flat_structure=True, label=0)
 
-    train_loader = DataLoader(normal_train, batch_size=512, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=512, shuffle=False)
+    train_loader = DataLoader(normal_train, batch_size=BATCH_SIZE, shuffle=False)
 
     # model = FeatureCNN().to(device)
     model = DeepFeatureCNN().to(device)
@@ -122,23 +123,32 @@ def main():
             total_loss += loss.item()
         print(f"Epoch {epoch+1}, Pretrain Loss: {total_loss / len(train_loader):.4f}")
 
-    # ✅ 특징 추출
     feats_train, _ = extract_features(model, train_loader, device)
-    feats_test, labels_test = extract_features(model, test_loader, device)
 
-    # ✅ OC-SVM 훈련 및 평가
     print("\n🔹 One-Class SVM")
     clf = svm.OneClassSVM(kernel='rbf', gamma='scale', nu=0.1)
     clf.fit(feats_train)
+
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    torch.save(model.state_dict(), CNN_MODEL_PATH)
+    joblib.dump(clf, OCSVM_MODEL_PATH)
+
+    normal_test = cnn_train.PacketImageDataset(TEST_DATASET, transform, is_flat_structure=True, label=0)
+    attack_test = cnn_train.PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=True, label=1)
+
+    min_len = min(len(normal_test), len(attack_test))
+    test_dataset = torch.utils.data.ConcatDataset([
+        Subset(normal_test, list(range(min_len))),
+        Subset(attack_test, list(range(min_len)))
+    ])
+    test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    
+    feats_test, labels_test = extract_features(model, test_loader, device)
+
     preds = clf.predict(feats_test)
     preds = [0 if p == 1 else 1 for p in preds]  # 이상이면 1
     print(classification_report(labels_test, preds, digits=4))
 
-    os.makedirs("./AI/Model/OCSVM/Model", exist_ok=True)
-    # torch.save(model.state_dict(), "./AI/Model/OCSVM/Model/front_ocsvm_cnn_epoch50.pth")
-    torch.save(model.state_dict(), "./AI/Model/OCSVM/Model/front_ocsvm_deep_cnn_epoch50.pth")
-    # joblib.dump(clf, "./AI/Model/OCSVM/Model/front_ocsvm.pkl")
-    joblib.dump(clf, "./AI/Model/OCSVM/Model/front_deep_ocsvm.pkl")
 
 if __name__ == '__main__':
     main()
