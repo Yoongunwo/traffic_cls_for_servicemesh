@@ -76,6 +76,22 @@ THRESH_HOLD_PATH = './AI/Model/CAE/Model/cic_autoencoder_threshold.npy'
 
 BATCH_SIZE = 4096*32
 
+def train_model(device, train_loader, epoches, model_dir, model_path, threshold_path):
+    # initialize model
+    model = autoencoder_model.ConvAutoencoder().to(device)
+    
+    # training
+    train_autoencoder(model, train_loader, num_epochs=epoches, device=device)
+    
+    # save
+    os.makedirs(model_dir, exist_ok=True)
+    torch.save(model.state_dict(), os.path.join(model_dir, model_path))
+
+    # 임계값 계산
+    threshold = calculate_threshold(model, train_loader, device=device, percentile=95)
+    # save threshold
+    np.save(os.path.join(model_dir, threshold_path), threshold)
+
 def main():
     # 설정
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

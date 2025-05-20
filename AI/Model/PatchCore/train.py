@@ -97,15 +97,41 @@ def evaluate_patchcore(embedding_path, model_path, test_loader, device):
     print("Classification Report:\n", classification_report(all_labels, preds, digits=4, zero_division=0))    
     print("ROC AUC:", roc_auc_score(all_labels, preds))
 
+def train_model(device, train_loader, epoches, model_dir, embedding_path, model_path):
+    # ✅ Feature Extractor
+    model = FeatureExtractor().to(device)
+    model.eval()
+
+    # ✅ Extract Training Embeddings
+    all_patches = []
+    with torch.no_grad():
+        for x, _ in train_loader:
+            x = x.to(device)
+            feat = model(x)  # [B, C, H, W]
+            patches = flatten_features(feat)  # [B, H*W, C]
+            all_patches.append(patches.cpu())
+
+    embeddings = torch.cat(all_patches, dim=0).reshape(-1, 512).numpy()
+    print("✅ Feature bank shape:", embeddings.shape)
+
+    # ✅ Save Feature Bank
+    os.makedirs(model_dir, exist_ok=True)
+    np.save(os.path.join(model_dir, embedding_path), embeddings)
+
+    # ✅ Fit and Save Nearest Neighbors
+    nn_model = NearestNeighbors(n_neighbors=1, algorithm='auto')
+    nn_model.fit(embeddings)
+    joblib.dump(nn_model, os.path.join(model_dir, model_path))
+
 TRAIN_DATASET = './Data/cic_data/Wednesday-workingHours/benign_train'
 TEST_DATASET = './Data/cic_data/Wednesday-workingHours/benign_test'
 ATTACK_DATASET = './Data/cic_data/Wednesday-workingHours/attack'
 
 MODEL_DIR = './AI/Model/PatchCore/Model'
-PATCHCORE_MODEL_PATH =  './PatchCore/Model/cic_feature_bank.npy'
-NN_MODEL_PATH = './PatchCore/Model/cic_nn_model.pkl'
+PATCHCORE_MODEL_PATH =  './AI/Model/PatchCore/Model/cic_feature_bank.npy'
+NN_MODEL_PATH = './AI/Model/PatchCore/Model/cic_nn_model.pkl'
 
-BATCH_SIZE = 4096 * 16
+BATCH_SIZE = 4096 * 4
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -114,7 +140,7 @@ def main():
         transforms.ToTensor(),
     ])
 
-    normal_train = cnn_train.PacketImageDataset(TRAIN_DATASET, transform, is_flat_structure=True, label=0)
+    normal_train = PacketImageDataset(TRAIN_DATASET, transform, is_flat_structure=True, label=0)
 
     train_loader = DataLoader(normal_train, batch_size=BATCH_SIZE, shuffle=False)
 
@@ -145,8 +171,8 @@ def main():
 
     # ✅ Evaluation
 
-    normal_test = cnn_train.PacketImageDataset(TEST_DATASET, transform, is_flat_structure=True, label=0)
-    attack_test = cnn_train.PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=True, label=1)
+    normal_test = PacketImageDataset(TEST_DATASET, transform, is_flat_structure=True, label=0)
+    attack_test = PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=True, label=1)
 
     min_len = min(len(normal_test), len(attack_test))
 

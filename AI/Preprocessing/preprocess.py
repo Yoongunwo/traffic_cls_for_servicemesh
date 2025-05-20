@@ -4,11 +4,21 @@ from scapy.all import rdpcap
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
+import random
 
 from hilbertcurve.hilbertcurve import HilbertCurve
 
 current_dir = os.getcwd()  # C:\Users\gbwl3\Desktop\SourceCode\k8s_research
 sys.path.append(current_dir)
+
+DIR_PATH = './Data/byte_16_spiral_attack'
+
+PCAP_PATH = './Data/attack/brute_force.pcap'
+train_ratio = 0.7
+val_ratio = 0.15
+test_ratio = 0.15
+
+ATTACK_PCAP_PATHS = ['brute_force', 'kubernetes_enum', 'kubernetes_escape', 'kubernetes_manipulate', 'remote_access']
 
 def packet_to_bytes(packet):
     # 패킷을 raw 바이트로 변환
@@ -27,8 +37,10 @@ def packet_to_image(packet_bytes, width=32): # row-major
     return image
 
 def spiral_inward_mapping(byte_array, image_size=16):
-    padded = np.pad(byte_array, (0, image_size * image_size - len(byte_array)), 'constant')
+    pad_len = max(0, image_size * image_size - len(byte_array))
+    padded = np.pad(byte_array, (0, pad_len), 'constant')
     data = padded[:image_size * image_size]
+
     mat = np.zeros((image_size, image_size), dtype=np.uint8)
 
     top, bottom, left, right = 0, image_size-1, 0, image_size-1
@@ -51,7 +63,9 @@ def spiral_inward_mapping(byte_array, image_size=16):
     return mat
 
 def diagonal_zigzag_mapping(byte_array, image_size=16):
-    padded = np.pad(byte_array, (0, image_size * image_size - len(byte_array)), 'constant')
+    pad_len = max(0, image_size * image_size - len(byte_array))
+    padded = np.pad(byte_array, (0, pad_len), 'constant')
+
     data = padded[:image_size * image_size]
     mat = np.zeros((image_size, image_size), dtype=np.uint8)
 
@@ -69,7 +83,9 @@ def diagonal_zigzag_mapping(byte_array, image_size=16):
 
 
 def hilbert_mapping(byte_array, image_size=16):
-    padded = np.pad(byte_array, (0, image_size * image_size - len(byte_array)), 'constant')
+    pad_len = max(0, image_size * image_size - len(byte_array))
+    padded = np.pad(byte_array, (0, pad_len), 'constant')
+
     data = padded[:image_size * image_size]
     mat = np.zeros((image_size, image_size), dtype=np.uint8)
 
@@ -107,7 +123,44 @@ def save_packet_image(image_array, output_path, format='PNG', mode='single'):
         plt.savefig(output_path, format=format, bbox_inches='tight', pad_inches=0)
         plt.close()
 
-def process_pcap_to_images(pcap_file, output_dir, width=32, start_idx=0, max_packets=None):
+def process_pcap_to_images_for_bengin(pcap_file, output_root_dir, width=16, start_idx=0, max_packets=None, seed=42):
+    """
+    PCAP 파일의 패킷을 이미지로 변환하여 train/val/test 폴더에 무작위로 분할 저장
+    """
+    packets = rdpcap(pcap_file)
+    total_packets = len(packets)
+    if max_packets is not None:
+        total_packets = min(total_packets, max_packets)
+
+    indices = list(range(total_packets))
+    random.seed(seed)
+    random.shuffle(indices)  # ✅ 셔플!
+
+    num_train = int(total_packets * train_ratio)
+    num_val = int(total_packets * val_ratio)
+    num_test = total_packets - num_train - num_val
+
+    split_sets = {
+        'train': indices[:num_train],
+        'val': indices[num_train:num_train + num_val],
+        'test': indices[num_train + num_val:]
+    }
+
+    print(f"Shuffled split: train={num_train}, val={num_val}, test={num_test}")
+
+    for split, idx_list in split_sets.items():
+        split_dir = os.path.join(output_root_dir, split)
+        os.makedirs(split_dir, exist_ok=True)
+
+        for i in idx_list:
+            packet_bytes = packet_to_bytes(packets[i])
+            image = spiral_inward_mapping(packet_bytes, width)
+            image_path = os.path.join(split_dir, f'packet_{i}.png')
+            save_packet_image(image, image_path)
+
+        print(f"[{split.upper()}] Saved {len(idx_list)} images to: {split_dir}")
+
+def process_pcap_to_images_for_attack(pcap_file, output_dir, width=32, start_idx=0, max_packets=None):
     """
     PCAP 파일의 패킷들을 이미지로 변환하여 저장
     
@@ -130,7 +183,7 @@ def process_pcap_to_images(pcap_file, output_dir, width=32, start_idx=0, max_pac
     for i in range(start_idx, end_idx):
         # 패킷을 이미지로 변환
         packet_bytes = packet_to_bytes(packets[i])
-        image = packet_to_image(packet_bytes, width)
+        image = spiral_inward_mapping(packet_bytes, width)
         
         # 이미지 파일 경로
         image_path = os.path.join(output_dir, f'packet_{i}.png')
@@ -145,10 +198,11 @@ def process_pcap_to_images(pcap_file, output_dir, width=32, start_idx=0, max_pac
         if (i - start_idx + 1) % 100 == 0:
             print(f'Processed {i - start_idx + 1} packets')
 
+
 if __name__ == "__main__":
-    data_root_path = "./Data"
-    pcap_file = os.path.join(data_root_path, "save_front.pcap")
-    output_dir = "./Data/save/save_packet_to_byte_16/front_image"  # 저장할 디렉토리
-    
-    # 전체 PCAP 파일 처리
-    process_pcap_to_images(pcap_file, output_dir, width=16)
+    # process_pcap_to_images_for_bengin(PCAP_PATH, DIR_PATH, width=16)
+
+    for attack_pcap in ATTACK_PCAP_PATHS:
+        PCAP_PATH = f'./Data/attack/{attack_pcap}.pcap'
+        DIR_PATH = f'./Data/byte_16_spiral_attack/{attack_pcap}'
+        process_pcap_to_images_for_attack(PCAP_PATH, DIR_PATH, width=16)      

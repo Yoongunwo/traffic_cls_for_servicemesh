@@ -4,10 +4,84 @@ from PIL import Image
 import pandas as pd
 from tqdm import tqdm
 
+TYPE = 'spiral'
+
 CSV_PATH = './Data/MachineLearningCVE/Wednesday-workingHours.pcap_ISCX.csv'
 PCAP_PATH = './Data/cic_data/Wednesday-workingHours.pcap'
-OUTPUT_DIR = './Data/cic_data/Wednesday-workingHours'
+OUTPUT_DIR = f'./Data/cic_data/Wednesday-workingHours/{TYPE}'
 IMAGE_SIZE = 16
+
+def packet_to_image(packet_bytes, width=32): # row-major
+    normalized = np.array([int(b) for b in packet_bytes], dtype=np.uint8)
+    
+    # padding
+    if len(normalized) < width * width:
+        padding = np.zeros(width * width - len(normalized), dtype=np.uint8)
+        normalized = np.concatenate([normalized, padding])
+    
+    image = normalized[:width * width].reshape(width, width)
+
+    return image
+
+def spiral_inward_mapping(byte_array, image_size=16):
+    pad_len = max(0, image_size * image_size - len(byte_array))
+    padded = np.pad(byte_array, (0, pad_len), 'constant')
+    data = padded[:image_size * image_size]
+
+    mat = np.zeros((image_size, image_size), dtype=np.uint8)
+
+    top, bottom, left, right = 0, image_size-1, 0, image_size-1
+    idx = 0
+    while top <= bottom and left <= right:
+        for i in range(left, right+1):  # Top row
+            mat[top][i] = data[idx]; idx += 1
+        top += 1
+        for i in range(top, bottom+1):  # Right column
+            mat[i][right] = data[idx]; idx += 1
+        right -= 1
+        if top <= bottom:
+            for i in range(right, left-1, -1):  # Bottom row
+                mat[bottom][i] = data[idx]; idx += 1
+            bottom -= 1
+        if left <= right:
+            for i in range(bottom, top-1, -1):  # Left column
+                mat[i][left] = data[idx]; idx += 1
+            left += 1
+    return mat
+
+def diagonal_zigzag_mapping(byte_array, image_size=16):
+    pad_len = max(0, image_size * image_size - len(byte_array))
+    padded = np.pad(byte_array, (0, pad_len), 'constant')
+
+    data = padded[:image_size * image_size]
+    mat = np.zeros((image_size, image_size), dtype=np.uint8)
+
+    index = 0
+    for s in range(2 * image_size - 1):
+        if s % 2 == 0:
+            for i in range(s, -1, -1):
+                if i < image_size and s - i < image_size:
+                    mat[i][s - i] = data[index]; index += 1
+        else:
+            for i in range(0, s + 1):
+                if i < image_size and s - i < image_size:
+                    mat[i][s - i] = data[index]; index += 1
+    return mat
+
+
+def hilbert_mapping(byte_array, image_size=16):
+    pad_len = max(0, image_size * image_size - len(byte_array))
+    padded = np.pad(byte_array, (0, pad_len), 'constant')
+
+    data = padded[:image_size * image_size]
+    mat = np.zeros((image_size, image_size), dtype=np.uint8)
+
+    p = int(np.log2(image_size))  # image_size = 2^p
+    hilbert_curve = HilbertCurve(p, 2)
+    for i in range(image_size * image_size):
+        x, y = hilbert_curve.coordinates_from_distance(i)
+        mat[y][x] = data[i]  # y,x because PIL uses row,col
+    return mat
 
 # 라벨 분할
 BENIGN_SPLIT = {'train': 0.7, 'val': 0.15, 'test': 0.15}
@@ -56,12 +130,9 @@ for i, (pkt_data, _) in enumerate(tqdm(reader, total=len(df))):
 
     payload = bytes(pkt.load)
     byte_array = np.frombuffer(payload, dtype=np.uint8)
-    if len(byte_array) < IMAGE_SIZE * IMAGE_SIZE:
-        byte_array = np.pad(byte_array, (0, IMAGE_SIZE * IMAGE_SIZE - len(byte_array)), 'constant')
-    else:
-        byte_array = byte_array[:IMAGE_SIZE * IMAGE_SIZE]
+    
+    img = spiral_inward_mapping(byte_array, IMAGE_SIZE)
 
-    img = byte_array.reshape((IMAGE_SIZE, IMAGE_SIZE))
     im = Image.fromarray(img.astype(np.uint8), mode='L')
 
     if label_raw == 'benign':

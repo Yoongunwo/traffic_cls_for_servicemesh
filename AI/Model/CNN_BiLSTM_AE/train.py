@@ -75,6 +75,26 @@ def evaluate(model, dataloader, threshold, device):
     print(classification_report(labels, preds, digits=4, zero_division=0))
     print(f"ROC AUC: {roc_auc_score(labels, scores):.4f}")
 
+def train_model(device, train_loader, epoches, model_dir, model_path, threshold_path):
+    # 모델 학습
+    model = CNN_BiLSTM_Autoencoder(input_dim=256)
+    train(model, train_loader, device, epoches)
+
+    # threshold 계산 (3-sigma 기준)
+    losses = []
+    with torch.no_grad():
+        for x, _ in train_loader:
+            x = x.to(device)
+            out = model(x)
+            l = F.mse_loss(out, x, reduction='none').view(x.size(0), -1).mean(dim=1)
+            losses.extend(l.cpu().numpy())
+    threshold = np.mean(losses) + 3 * np.std(losses)
+    print(f"\n✅ Threshold: {threshold:.6f}")
+
+    os.makedirs(model_dir, exist_ok=True)
+    torch.save(model.state_dict(), os.path.join(model_dir, model_path))
+    np.save(os.path.join(model_dir, threshold_path), np.array([threshold]))
+
 TRAIN_DATASET = './Data/cic_data/Wednesday-workingHours/benign_train'
 TEST_DATASET = './Data/cic_data/Wednesday-workingHours/benign_test'
 ATTACK_DATASET = './Data/cic_data/Wednesday-workingHours/attack'

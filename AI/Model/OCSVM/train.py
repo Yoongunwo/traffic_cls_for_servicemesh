@@ -76,6 +76,36 @@ def extract_features(model, dataloader, device):
         labels.extend(y.numpy())
     return np.array(feats), np.array(labels)
 
+def train_model(device, train_loader, epoches, model_dir, cnn_path, ocsvm_path):
+    model = DeepFeatureCNN().to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    criterion = nn.MSELoss()
+
+    # ✅ 간단한 pretrain
+    model.train()
+
+    for epoch in range(epoches):
+        total_loss = 0
+        for x, _ in train_loader:
+            x = x.to(device)
+            f = model(x)
+            loss = criterion(f, f.detach())
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+        print(f"Epoch {epoch+1}, Pretrain Loss: {total_loss / len(train_loader):.4f}")
+
+    feats_train, _ = extract_features(model, train_loader, device)
+
+    print("\n🔹 One-Class SVM")
+    clf = svm.OneClassSVM(kernel='rbf', gamma='scale', nu=0.1)
+    clf.fit(feats_train)
+
+    os.makedirs(model_dir, exist_ok=True)
+    torch.save(model.state_dict(), os.path.join(model_dir, cnn_path))
+    joblib.dump(clf, os.path.join(model_dir, ocsvm_path))
+
 # ✅ 메인 함수
 
 TRAIN_DATASET = './Data/cic_data/Wednesday-workingHours/benign_train'

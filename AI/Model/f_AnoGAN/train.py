@@ -85,7 +85,7 @@ def compute_anomaly_score(x, x_gen, z, z_hat, lambda_=0.1):
     latent_loss = F.mse_loss(z, z_hat)
     return recon_loss + lambda_ * latent_loss
 
-def train_gan(generator, discriminator, dataloader, device, latent_dim=100, num_epochs=50):
+def train_gan(generator, discriminator, dataloader, device, gen_path, disc_path, latent_dim=100, num_epochs=50):
     G, D = generator.to(device), discriminator.to(device)
     opt_G = torch.optim.Adam(G.parameters(), lr=0.0002, betas=(0.5, 0.999))
     opt_D = torch.optim.Adam(D.parameters(), lr=0.0002, betas=(0.5, 0.999))
@@ -109,10 +109,10 @@ def train_gan(generator, discriminator, dataloader, device, latent_dim=100, num_
 
         print(f"Epoch [{epoch+1}/{num_epochs}], D Loss: {d_loss.item():.4f}, G Loss: {g_loss.item():.4f}")
 
-    torch.save(G.state_dict(), GENERATOR_MODEL_PATH)
-    torch.save(D.state_dict(), DISCRIMINATOR_MODEL_PATH)
+    torch.save(G.state_dict(), gen_path)
+    torch.save(D.state_dict(), disc_path)
 
-def train_encoder(encoder, generator, dataloader, device, latent_dim=100, num_epochs=50):
+def train_encoder(encoder, generator, dataloader, device, encoder_path, latent_dim=100, num_epochs=50):
     E, G = encoder.to(device), generator.to(device)
     opt_E = torch.optim.Adam(E.parameters(), lr=0.0002)
     criterion = nn.MSELoss()
@@ -130,7 +130,7 @@ def train_encoder(encoder, generator, dataloader, device, latent_dim=100, num_ep
 
         print(f"[Encoder] Epoch {epoch+1}/{num_epochs}, Loss: {total_loss / len(dataloader):.6f}")
 
-    torch.save(E.state_dict(), ENCODER_MODEL_PATH)
+    torch.save(E.state_dict(), encoder_path)
 
 def evaluate(encoder, generator, dataloader, device):
     encoder.eval()
@@ -178,6 +178,20 @@ def save_threshold(threshold, path):
 def load_threshold(path):
     return float(np.load(path)[0])
 
+def train_model(device, train_loader, epoches, model_dir, gen_path, disc_path, encoder_path, threshold_path):
+    
+    G = Generator()
+    D = Discriminator()
+    E = Encoder()
+
+    train_gan(G, D, train_loader, device, num_epochs=epoches, 
+              gen_path=os.path.join(model_dir, gen_path), disc_path=os.path.join(model_dir, disc_path))
+    train_encoder(E, G, train_loader, device, num_epochs=epoches, encoder_path=os.path.join(model_dir, encoder_path))
+
+    threshold = calculate_threshold(G, E, train_loader, device)
+    save_threshold(threshold, path=os.path.join(model_dir, threshold_path))
+
+
 TRAIN_DATASET = './Data/cic_data/Wednesday-workingHours/benign_train'
 TEST_DATASET = './Data/cic_data/Wednesday-workingHours/benign_test'
 ATTACK_DATASET = './Data/cic_data/Wednesday-workingHours/attack'
@@ -188,7 +202,7 @@ GENERATOR_MODEL_PATH = './AI/Model/f_AnoGAN/cic_generator_epoch50.pth'
 DISCRIMINATOR_MODEL_PATH = './AI/Model/f_AnoGAN/cic_discriminator_epoch50.pth'
 THRESHOLD_PATH = './AI/Model/f_AnoGAN/Model/cic_threshold.npy'
 
-BATCH_SIZE = 4096 * 16
+BATCH_SIZE = 4096 * 32
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -206,8 +220,8 @@ def main():
     D = Discriminator()
     E = Encoder()
 
-    train_gan(G, D, train_loader, device)
-    train_encoder(E, G, train_loader, device)
+    train_gan(G, D, train_loader, device, num_epochs=50, gen_path=GENERATOR_MODEL_PATH, disc_path=DISCRIMINATOR_MODEL_PATH)
+    train_encoder(E, G, train_loader, device, num_epochs=50, encoder_path=ENCODER_MODEL_PATH)
     
     normal_test = cnn_train.PacketImageDataset(TEST_DATASET, transform, is_flat_structure=True, label=0)
     attack_test = cnn_train.PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=True, label=1)

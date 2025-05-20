@@ -100,7 +100,7 @@ def train_cae(model, dataloader, device, num_epochs=30, lr=0.001):
     torch.save(model.state_dict(), MODEL_PATH)
     print(f"\n✅ Model saved to {MODEL_PATH}")
 
-def calculate_threshold(model, test_loader, device):
+def calculate_threshold(model, test_loader, device, threshold_path):
     # ✅ Threshold 계산 및 저장
     print("📊 Calculating threshold from training data...")
     model.eval()
@@ -114,8 +114,8 @@ def calculate_threshold(model, test_loader, device):
             all_scores.extend(loss.cpu().numpy())
 
     threshold = np.percentile(np.array(all_scores), 95)
-    np.save(THRESHOLD_PATH, threshold)
-    print(f"✅ Threshold saved to {THRESHOLD_PATH}: {threshold:.6f}")
+    np.save(threshold_path, threshold)
+    print(f"✅ Threshold saved to {threshold_path}: {threshold:.6f}")
 
 def evaluate_attention_cae(model_path, threshold_path, test_loader, device):
     model = AttentionCAE().to(device)
@@ -147,13 +147,51 @@ def evaluate_attention_cae(model_path, threshold_path, test_loader, device):
     print(classification_report(all_labels, preds, digits=4, zero_division=0))
     print(f"ROC AUC: {roc_auc_score(all_labels, all_scores):.4f}")
 
-TRAIN_DATASET = './Data/cic_data/Wednesday-workingHours/benign_train'
-TEST_DATASET = './Data/cic_data/Wednesday-workingHours/benign_test'
-ATTACK_DATASET = './Data/cic_data/Wednesday-workingHours/attack'
+def train_model(device, train_loader, epoches, model_dir, model_path, threshold_path):
+    train_loader = DataLoader(train_loader, batch_size=BATCH_SIZE, shuffle=True)
+    model = AttentionCAE()
+    
+    model.to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    criterion = nn.MSELoss()
+
+    for epoch in range(epoches):
+        model.train()
+        epoch_loss = 0.0
+        for images, _ in train_loader:  # label은 사용하지 않음
+            images = images.to(device)
+            outputs = model(images)
+            loss = criterion(outputs, images)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            epoch_loss += loss.item()
+
+        avg_loss = epoch_loss / len(train_loader)
+        print(f"Epoch [{epoch+1}/{epoches}] Loss: {avg_loss:.6f}")
+
+    # ✅ 모델 저장
+    os.makedirs(model_dir, exist_ok=True)
+    torch.save(model.state_dict(), os.path.join(model_dir, model_path))
+    print(f"\n✅ Model saved to {MODEL_PATH}")
+
+    calculate_threshold(model, train_loader, device, threshold_path=threshold_path)
+    print(f"✅ Threshold saved to {THRESHOLD_PATH}")
+
+# TRAIN_DATASET = './Data/cic_data/Wednesday-workingHours/benign_train'
+# TEST_DATASET = './Data/cic_data/Wednesday-workingHours/benign_test'
+# ATTACK_DATASET = './Data/cic_data/Wednesday-workingHours/attack'
+TRAIN_DATASET = './Data/byte_16/front_image/train'
+TEST_DATASET = './Data/byte_16/front_image/test'
+ATTACK_DATASET = './Data/byte_16_attack'
 
 MODEL_DIR = './AI/Model/CAE_Attention/Model'
-MODEL_PATH = './AI/Model/CAE_Attention/Model/cic_attention_cae.pth'
-THRESHOLD_PATH = './AI/Model/CAE_Attention/Model/cic_threshold_attention_cae.npy'
+# MODEL_PATH = './AI/Model/CAE_Attention/Model/cic_attention_cae.pth'
+# THRESHOLD_PATH = './AI/Model/CAE_Attention/Model/cic_threshold_attention_cae.npy'
+MODEL_PATH = './AI/Model/CAE_Attention/Model/front_attention_cae.pth'
+THRESHOLD_PATH = './AI/Model/CAE_Attention/Model/front_threshold_attention_cae.npy'
 
 BATCH_SIZE = 4096*16
 
@@ -171,9 +209,10 @@ def main():
     train_loader = DataLoader(normal_train, batch_size=BATCH_SIZE, shuffle=True)
     model = AttentionCAE()
     train_cae(model, train_loader, device, num_epochs=50)
+    calculate_threshold(model, train_loader, device, threshold_path=THRESHOLD_PATH)
 
     normal_test = cnn_train.PacketImageDataset(TEST_DATASET, transform, is_flat_structure=True, label=0)
-    attack_test = cnn_train.PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=True, label=1)
+    attack_test = cnn_train.PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=False, label=1)
 
     min_len = min(len(normal_test), len(attack_test))
     test_dataset = torch.utils.data.ConcatDataset([
@@ -182,7 +221,6 @@ def main():
     ])
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-    calculate_threshold(model, test_loader, device)
     evaluate_attention_cae(
         model_path=MODEL_PATH,
         threshold_path=THRESHOLD_PATH,
