@@ -11,20 +11,19 @@ from hilbertcurve.hilbertcurve import HilbertCurve
 current_dir = os.getcwd()  # C:\Users\gbwl3\Desktop\SourceCode\k8s_research
 sys.path.append(current_dir)
 
-DIR_PATH = './Data/byte_16_spiral_attack'
-
-PCAP_PATH = './Data/attack/brute_force.pcap'
 train_ratio = 0.7
 val_ratio = 0.15
 test_ratio = 0.15
 
+BENIGN_PCAP_PATH = ['save_front', 'save_back', 'grafana', 'prometheus', 'jenkins', 'pgadmin', 'postgres']
+# BENIGN_PCAP_PATH = ['grafana', 'prometheus', 'jenkins', 'pgadmin', 'postgres']
 ATTACK_PCAP_PATHS = ['brute_force', 'kubernetes_enum', 'kubernetes_escape', 'kubernetes_manipulate', 'remote_access']
 
 def packet_to_bytes(packet):
     # 패킷을 raw 바이트로 변환
     return [int(b) for b in bytes(packet)]
 
-def packet_to_image(packet_bytes, width=32): # row-major
+def row_wise_mapping(packet_bytes, width=32): # row-major
     normalized = np.array([int(b) for b in packet_bytes], dtype=np.uint8)
     
     # padding
@@ -92,7 +91,7 @@ def hilbert_mapping(byte_array, image_size=16):
     p = int(np.log2(image_size))  # image_size = 2^p
     hilbert_curve = HilbertCurve(p, 2)
     for i in range(image_size * image_size):
-        x, y = hilbert_curve.coordinates_from_distance(i)
+        x, y = hilbert_curve.point_from_distance(i)
         mat[y][x] = data[i]  # y,x because PIL uses row,col
     return mat
 
@@ -123,7 +122,44 @@ def save_packet_image(image_array, output_path, format='PNG', mode='single'):
         plt.savefig(output_path, format=format, bbox_inches='tight', pad_inches=0)
         plt.close()
 
-def process_pcap_to_images_for_bengin(pcap_file, output_root_dir, width=16, start_idx=0, max_packets=None, seed=42):
+def process_pcap_to_images_for_bengin_seq(pcap_file, output_root_dir, width=16, start_idx=0, max_packets=None, seed=42):
+    """
+    PCAP 파일의 패킷을 이미지로 변환하여 train/val/test 폴더에 무작위로 분할 저장
+    """
+    packets = rdpcap(pcap_file)
+    total_packets = len(packets)
+    if max_packets is not None:
+        total_packets = min(total_packets, max_packets)
+
+    # 순차적으로 index 분할
+    # num_train = int(total_packets * train_ratio)
+    # num_val = int(total_packets * val_ratio)
+    # num_test = total_packets - num_train - num_val
+    num_train = 50000
+    num_val = 5000
+    num_test = 5000
+
+    split_sets = {
+        'train': range(0, num_train),
+        'val': range(num_train, num_train + num_val),
+        'test': range(num_train + num_val, total_packets)
+    }
+
+    print(f"Sequential split: train={num_train}, val={num_val}, test={num_test}")
+
+    for split, idx_list in split_sets.items():
+        split_dir = os.path.join(output_root_dir, split)
+        os.makedirs(split_dir, exist_ok=True)
+
+        for i in idx_list:
+            packet_bytes = packet_to_bytes(packets[i])
+            image = hilbert_mapping(packet_bytes, width)
+            image_path = os.path.join(split_dir, f'packet_{i}.png')
+            save_packet_image(image, image_path)
+
+        print(f"[{split.upper()}] Saved {len(idx_list)} images to: {split_dir}")
+
+def process_pcap_to_images_for_bengin_shuffle(pcap_file, output_root_dir, width=16, start_idx=0, max_packets=None, seed=42):
     """
     PCAP 파일의 패킷을 이미지로 변환하여 train/val/test 폴더에 무작위로 분할 저장
     """
@@ -154,7 +190,7 @@ def process_pcap_to_images_for_bengin(pcap_file, output_root_dir, width=16, star
 
         for i in idx_list:
             packet_bytes = packet_to_bytes(packets[i])
-            image = spiral_inward_mapping(packet_bytes, width)
+            image = hilbert_mapping(packet_bytes, width)
             image_path = os.path.join(split_dir, f'packet_{i}.png')
             save_packet_image(image, image_path)
 
@@ -183,7 +219,7 @@ def process_pcap_to_images_for_attack(pcap_file, output_dir, width=32, start_idx
     for i in range(start_idx, end_idx):
         # 패킷을 이미지로 변환
         packet_bytes = packet_to_bytes(packets[i])
-        image = spiral_inward_mapping(packet_bytes, width)
+        image = hilbert_mapping(packet_bytes, width)
         
         # 이미지 파일 경로
         image_path = os.path.join(output_dir, f'packet_{i}.png')
@@ -200,9 +236,19 @@ def process_pcap_to_images_for_attack(pcap_file, output_dir, width=32, start_idx
 
 
 if __name__ == "__main__":
-    # process_pcap_to_images_for_bengin(PCAP_PATH, DIR_PATH, width=16)
+    # for benign_pcap in BENIGN_PCAP_PATH:
+    #     PCAP_PATH = f'./Data/benign/{benign_pcap}.pcap'
+    #     DIR_PATH = f'./Data/byte_16_hilbert/{benign_pcap}'
 
-    for attack_pcap in ATTACK_PCAP_PATHS:
-        PCAP_PATH = f'./Data/attack/{attack_pcap}.pcap'
-        DIR_PATH = f'./Data/byte_16_spiral_attack/{attack_pcap}'
-        process_pcap_to_images_for_attack(PCAP_PATH, DIR_PATH, width=16)      
+    #     process_pcap_to_images_for_bengin(PCAP_PATH, DIR_PATH, width=16)
+    
+    for benign_pcap in BENIGN_PCAP_PATH:
+        PCAP_PATH = f'./Data/benign/{benign_pcap}.pcap'
+        DIR_PATH = f'./Data/byte_32_hilbert_seq/{benign_pcap}'
+
+        process_pcap_to_images_for_bengin_seq(PCAP_PATH, DIR_PATH, width=32)
+
+    # for attack_pcap in ATTACK_PCAP_PATHS:
+    #     PCAP_PATH = f'./Data/attack/{attack_pcap}.pcap'
+    #     DIR_PATH = f'./Data/byte_16_hilbert_attack/{attack_pcap}'
+    #     process_pcap_to_images_for_attack(PCAP_PATH, DIR_PATH, width=16)      

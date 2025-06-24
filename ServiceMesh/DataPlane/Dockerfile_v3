@@ -1,0 +1,40 @@
+# === Dockerfile ===
+FROM ubuntu:20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LIBTORCH_PATH=/opt/libtorch
+ENV LD_LIBRARY_PATH=${LIBTORCH_PATH}/lib
+ENV LIBTORCH_PATH=/opt/libtorch
+
+# --- System deps ---
+RUN apt-get update && apt-get install -y \
+    wget curl unzip git sudo vim net-tools iputils-ping iptables-persistent \
+    build-essential cmake g++ make libssl-dev \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# --- Download LibTorch (CPU-only) ---
+WORKDIR /opt
+RUN wget https://download.pytorch.org/libtorch/cpu/libtorch-cxx11-abi-shared-with-deps-2.7.1%2Bcpu.zip -O libtorch.zip && \
+    unzip libtorch.zip && rm libtorch.zip
+
+# --- Copy code ---
+WORKDIR /app
+COPY ./ ./
+
+# --- Build ---
+RUN g++ -std=c++17 \
+    Proxy/v4/proxy_main.cpp Proxy/v4/packet_parser_stack.c -o proxy \
+    -I/opt/libtorch/include \
+    -I/opt/libtorch/include/torch/csrc/api/include \
+    -IProxy/v4 \
+    -L/opt/libtorch/lib \
+    -Wl,-rpath,/opt/libtorch/lib \
+    -Wl,--no-as-needed \
+    -ltorch \
+    -ltorch_cpu \
+    -lc10 \
+    -ldl -lpthread
+
+
+
+ENTRYPOINT ["/bin/sh", "-c", "/app/iptables.sh && while true; do sleep 1000; done"]

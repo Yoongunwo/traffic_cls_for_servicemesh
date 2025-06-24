@@ -1,5 +1,7 @@
 *.png
 *.pth
+*.npy
+*.pkl
 .venv/
 *.bz2
 *.pcap

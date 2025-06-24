@@ -1,16 +1,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: clf-image
+  name: test
+  namespace: test
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
-      app: clf-image
+      app: test
   template:
     metadata:
       labels:
-        app: clf-image
+        app: test
     spec:
       containers:
         - name: nginx
@@ -18,7 +19,12 @@ spec:
           ports:
             - containerPort: 80
         - name: reverse-proxy
-          image: yoongunwo/image_proxy:1.1
+          # image: yoongunwo/image_proxy:1.1
+          # image: yoongunwo/nid_proxy:1.0 # 1
+          # image: yoongunwo/nid_proxy_cpp:1.1 # 2
+          image: yoongunwo/nid_proxy_py:1.0 # 2
+          # image: yoongunwo/nid_proxy_openblas:1.0
+          # image: yoongunwo/nid_proxy_rs:1.0
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -32,28 +38,26 @@ spec:
             capabilities:
               add:
                 - ALL
-          volumeMounts:
-            - name: model
-              mountPath: /app/model
+          resources:
+            requests:
+              cpu: 1000m
+              memory: "512Mi"
+            limits:
+              cpu: 1000m
           # command: ['/bin/sh', '-c', 'while true; do sleep 1000; done']
-      volumes:
-        - name: model
-          hostPath:
-            path: /home/yoon/model/my-app
 
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: my-app
+  name: test
+  namespace: test
 spec:
   selector:
-    app: my-app
+    app: test
   ports:
     - protocol: TCP
       port: 80
       targetPort: 8080
-      nodePort: 30000
-  type: NodePort
 ---
 

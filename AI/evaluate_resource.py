@@ -96,8 +96,10 @@ def main():
 
 
     # one class svm
-    featureCNN = ocs_train.FeatureCNN()
-    featureCNN.load_state_dict(torch.load('./AI/Model/OCSVM/Model/front_ocsvm_cnn_epoch50.pth', weights_only=True))
+    # featureCNN = ocs_train.FeatureCNN()
+    # featureCNN.load_state_dict(torch.load('./AI/Model/OCSVM/Model/front_ocsvm_cnn_epoch50.pth', weights_only=True))
+    featureCNN = ocs_train.DeepFeatureCNN()
+    featureCNN.load_state_dict(torch.load('./AI/Model/OCSVM/Model/front_ocsvm_deep_cnn_epoch50.pth', weights_only=True))
     featureCNN.to(device)
     featureCNN.eval()
 
@@ -114,12 +116,12 @@ def main():
 
     # KD-OCSVM
     kd_ocsvm = kd_ocsvm_train.TinyFeatureCNN()
-    kd_ocsvm.load_state_dict(torch.load('./AI/Model/KD_OCSVM/Model/tiny_cnn_student.pth', weights_only=True))
+    kd_ocsvm.load_state_dict(torch.load('./AI/Model/KD_OCSVM/Model/tiny_deep_cnn_student.pth', weights_only=True))
     kd_ocsvm.to(device)
     kd_ocsvm.eval()
 
     oneclassSVM = svm.OneClassSVM(kernel='rbf', gamma='scale', nu=0.1)
-    oneclassSVM = joblib.load('./AI/Model/KD_OCSVM/Model/tiny_ocsvm.pkl')
+    oneclassSVM = joblib.load('./AI/Model/KD_OCSVM/Model/tiny_deep_ocsvm.pkl')
 
     print("\nKD-OCSVM")
     measure_resource(kd_ocsvm, oneclassSVM, test_loader)

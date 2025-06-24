@@ -2,7 +2,7 @@ import os
 import random
 import shutil
 
-source_dir = "./images"  # or your actual path
+source_dir = "./Data/attack_to_byte_16/brute_force"  # or your actual path
 all_files = [f for f in os.listdir(source_dir) if f.endswith('.png')]
 
 random.seed(42)
@@ -20,11 +20,8 @@ train_files = all_files[:train_cut]
 val_files = all_files[train_cut:val_cut]
 test_files = all_files[val_cut:]
 
-output_base = "./Data/"
-os.makedirs(output_base, exist_ok=True)
-
 for split_name, split_files in zip(["train", "val", "test"], [train_files, val_files, test_files]):
-    split_dir = os.path.join(output_base, split_name)
+    split_dir = os.path.join(source_dir, split_name)
     os.makedirs(split_dir, exist_ok=True)
     
     for f in split_files:

@@ -1,0 +1,55 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 기본 패키지 설치
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    wget \
+    curl \
+    unzip \
+    libssl-dev \
+    libprotobuf-dev \
+    protobuf-compiler \
+    libgoogle-glog-dev \
+    libgflags-dev \
+    libopenblas-dev \
+    libomp-dev \
+    ca-certificates \
+    git \
+    iptables-persistent \
+    vim \
+    && rm -rf /var/lib/apt/lists/*
+
+# 환경변수 설정
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TORCH_VERSION=2.1.0
+ENV CUDA_VERSION=cpu
+
+# libtorch 설치 (CPU 전용)
+RUN curl -L https://download.pytorch.org/libtorch/cpu/libtorch-shared-with-deps-${TORCH_VERSION}%2B${CUDA_VERSION}.zip \
+    -o libtorch.zip && \
+    unzip libtorch.zip && \
+    rm libtorch.zip
+
+ENV LIBTORCH_PATH=/libtorch
+ENV LD_LIBRARY_PATH=${LIBTORCH_PATH}/lib:${LD_LIBRARY_PATH}
+
+# 작업 디렉토리 설정
+WORKDIR /app
+
+# 소스코드 복사 (예: proxy.cpp, model.pt 포함)
+COPY . /app
+
+RUN useradd -m -s /bin/bash -u 5555 proxyuser && \
+    echo "proxyuser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+# 빌드
+# RUN g++ -std=c++17 proxy.cpp -I${LIBTORCH_PATH}/include \
+#     -I${LIBTORCH_PATH}/include/torch/csrc/api/include \
+#     -L${LIBTORCH_PATH}/lib -ltorch -lc10 -o proxy && \
+#     chmod +x ./proxy
+
+# 실행 명령
+ENTRYPOINT ["/bin/sh", "-c", "/app/iptables.sh && while true; do sleep 1000; done"]

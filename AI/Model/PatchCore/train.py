@@ -67,13 +67,29 @@ class FeatureExtractor(nn.Module):
     def forward(self, x):
         return self.features(x)
 
+class FeatureExtractor32(nn.Module):
+    def __init__(self):
+        super(FeatureExtractor32, self).__init__()
+        resnet = resnet18(weights=ResNet18_Weights.DEFAULT)
+
+        # 수정: stride 줄이기, MaxPool 제거
+        resnet.conv1.stride = (1, 1)
+        resnet.maxpool = nn.Identity()
+
+        # 특성 추출 계층
+        self.features = nn.Sequential(*list(resnet.children())[:-2])  # [B, 512, H, W]
+
+    def forward(self, x):
+        return self.features(x)
+
+
 # ✅ Flatten patches
 def flatten_features(feats):
     b, c, h, w = feats.shape
     return feats.permute(0, 2, 3, 1).reshape(b, -1, c)  # [B, H*W, C]
 
 def evaluate_patchcore(embedding_path, model_path, test_loader, device):
-    model = FeatureExtractor().to(device)
+    model = FeatureExtractor32().to(device)
     model.eval()
 
     embedding_path = np.load(embedding_path)
@@ -99,7 +115,7 @@ def evaluate_patchcore(embedding_path, model_path, test_loader, device):
 
 def train_model(device, train_loader, epoches, model_dir, embedding_path, model_path):
     # ✅ Feature Extractor
-    model = FeatureExtractor().to(device)
+    model = FeatureExtractor32().to(device)
     model.eval()
 
     # ✅ Extract Training Embeddings

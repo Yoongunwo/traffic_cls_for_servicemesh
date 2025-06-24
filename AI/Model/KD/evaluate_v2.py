@@ -34,7 +34,7 @@ class MobileNetV2_16x16(nn.Module):
 # ✅ 모델 불러오기
 # student = MobileNetV2_16x16().to(device)
 student = MobileNetV2_16x16()
-student.load_state_dict(torch.load("./AI/Model/KD/student_mobilenet_16x16.pth"))
+student.load_state_dict(torch.load("./AI/Model/KD/Model/student_mobilenet_pgadmin_16.pth"))
 student.eval()
 
 # ✅ Transform 정의 (Grayscale 변환)
@@ -46,7 +46,7 @@ transform = transforms.Compose([
 
 # ✅ 테스트 데이터셋 로드 (공격 및 정상 데이터)
 
-normal_test_dataset = cnn_train.PacketImageDataset('./Data/byte_16/jenkins/test', transform=transform, is_flat_structure=True)
+normal_test_dataset = cnn_train.PacketImageDataset('./Data/byte_16/pgadmin/test', transform=transform, is_flat_structure=True)
 attack_test_dataset = cnn_train.load_attack_subset('./Data/attack_to_byte_16', 'test', transform)
 
 
@@ -64,13 +64,6 @@ test_loader = DataLoader(
     batch_size=1024,
     shuffle=False
 )
-
-# ✅ DataLoader 
-# batch_size = 1024  # 메모리 최적화
-# test_loader = DataLoader(
-#     torch.utils.data.ConcatDataset([normal_test_dataset, attack_test_dataset]), 
-#     batch_size=batch_size, shuffle=False
-# )
 
 # ✅ 평가 지표 저장
 all_labels = []

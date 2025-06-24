@@ -4,14 +4,16 @@ from PIL import Image
 import pandas as pd
 from tqdm import tqdm
 
-TYPE = 'spiral'
+from hilbertcurve.hilbertcurve import HilbertCurve
+
+TYPE = 'hilbert'
 
 CSV_PATH = './Data/MachineLearningCVE/Wednesday-workingHours.pcap_ISCX.csv'
 PCAP_PATH = './Data/cic_data/Wednesday-workingHours.pcap'
-OUTPUT_DIR = f'./Data/cic_data/Wednesday-workingHours/{TYPE}'
-IMAGE_SIZE = 16
+OUTPUT_DIR = f'./Data/cic_data/Wednesday-workingHours/{TYPE}_32x32_seq'
+IMAGE_SIZE = 32
 
-def packet_to_image(packet_bytes, width=32): # row-major
+def row_wise_mapping(packet_bytes, width=32): # row-major
     normalized = np.array([int(b) for b in packet_bytes], dtype=np.uint8)
     
     # padding
@@ -79,7 +81,7 @@ def hilbert_mapping(byte_array, image_size=16):
     p = int(np.log2(image_size))  # image_size = 2^p
     hilbert_curve = HilbertCurve(p, 2)
     for i in range(image_size * image_size):
-        x, y = hilbert_curve.coordinates_from_distance(i)
+        x, y = hilbert_curve.point_from_distance(i)
         mat[y][x] = data[i]  # y,x because PIL uses row,col
     return mat
 
@@ -92,20 +94,40 @@ os.makedirs(f'{OUTPUT_DIR}/attack', exist_ok=True)
 df = pd.read_csv(CSV_PATH).reset_index(drop=True)
 
 # benign 샘플 분할
-benign_indices = [i for i, lbl in enumerate(df[' Label']) if str(lbl).strip().lower() == 'benign']
-np.random.seed(42)
-np.random.shuffle(benign_indices)
-total = len(benign_indices)
-train_cut = int(total * BENIGN_SPLIT['train'])
-val_cut = int(total * BENIGN_SPLIT['val'])
 
-benign_map = {}
-for i in benign_indices[:train_cut]:
-    benign_map[i] = 'train'
-for i in benign_indices[train_cut:train_cut + val_cut]:
-    benign_map[i] = 'val'
-for i in benign_indices[train_cut + val_cut:]:
-    benign_map[i] = 'test'
+METHOD = 'SEQ' # 'SEQ' or 'RAND'
+
+
+if METHOD == 'SEQ':
+    benign_indices = [i for i, lbl in enumerate(df[' Label']) if str(lbl).strip().lower() == 'benign']
+    total = len(benign_indices)
+    # train_cut = int(total * BENIGN_SPLIT['train'])
+    # val_cut = int(total * BENIGN_SPLIT['val'])
+    train_cut = 50000
+    val_cut = 10000
+
+    benign_map = {}
+    for i in range(train_cut):
+        benign_map[benign_indices[i]] = 'train'
+    for i in range(train_cut, train_cut + val_cut):
+        benign_map[benign_indices[i]] = 'val'
+    for i in range(train_cut + val_cut, total):
+        benign_map[benign_indices[i]] = 'test'
+else:
+    benign_indices = [i for i, lbl in enumerate(df[' Label']) if str(lbl).strip().lower() == 'benign']
+    np.random.seed(42)
+    np.random.shuffle(benign_indices)
+    total = len(benign_indices)
+    train_cut = int(total * BENIGN_SPLIT['train'])
+    val_cut = int(total * BENIGN_SPLIT['val'])
+
+    benign_map = {}
+    for i in benign_indices[:train_cut]:
+        benign_map[i] = 'train'
+    for i in benign_indices[train_cut:train_cut + val_cut]:
+        benign_map[i] = 'val'
+    for i in benign_indices[train_cut + val_cut:]:
+        benign_map[i] = 'test'
 
 # 저장용 카운터
 counter = {'benign_train': 0, 'benign_val': 0, 'benign_test': 0, 'attack': 0}
@@ -114,6 +136,10 @@ counter = {'benign_train': 0, 'benign_val': 0, 'benign_test': 0, 'attack': 0}
 reader = RawPcapReader(PCAP_PATH)
 
 for i, (pkt_data, _) in enumerate(tqdm(reader, total=len(df))):
+    if counter['benign_train'] >= 50000 and counter['benign_val'] >= 10000 and counter['attack'] >= 10000:
+        print("✅ 모든 이미지가 생성되었습니다.")
+        break
+
     if i >= len(df):  # CSV보다 pcap이 더 길면 중단
         break
 
@@ -131,17 +157,28 @@ for i, (pkt_data, _) in enumerate(tqdm(reader, total=len(df))):
     payload = bytes(pkt.load)
     byte_array = np.frombuffer(payload, dtype=np.uint8)
     
-    img = spiral_inward_mapping(byte_array, IMAGE_SIZE)
+    img = hilbert_mapping(byte_array, IMAGE_SIZE)
 
     im = Image.fromarray(img.astype(np.uint8), mode='L')
 
     if label_raw == 'benign':
         split = benign_map.get(i)
+
+        if split is "train" and counter[f'benign_{split}'] >= 50000:
+            continue
+        elif split is "val" and counter[f'benign_{split}'] >= 10000:
+            continue
+        elif split is "test":
+            continue
+        
         save_path = f"{OUTPUT_DIR}/benign_{split}/benign_{counter[f'benign_{split}']:05d}.png"
         counter[f'benign_{split}'] += 1
     else:
         save_path = f"{OUTPUT_DIR}/attack/attack_{counter['attack']:05d}.png"
         counter['attack'] += 1
+
+        if counter['attack'] >= 10000:
+            continue
 
     im.save(save_path)
 

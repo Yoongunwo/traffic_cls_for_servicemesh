@@ -7,10 +7,12 @@ import torchvision.transforms as transforms
 from torchvision import models
 from torch.utils.data import DataLoader, Dataset
 
+
 import os
 import sys
+from collections import Counter
 
-current_dir = os.getcwd() 
+current_dir = os.getcwd()  # C:\Users\gbwl3\Desktop\SourceCode\k8s_research
 sys.path.append(current_dir)
 
 from AI.Model.CNN import train_v2 as cnn_train
@@ -34,6 +36,7 @@ def distillation_loss(student_logits, teacher_logits, labels, T=2.0, alpha=0.5):
     hard_targets = F.cross_entropy(student_logits, labels)
     return alpha * soft_targets + (1 - alpha) * hard_targets
 
+
 def main():
     batch_size = 8192*8
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -41,7 +44,7 @@ def main():
     student = MobileNetV2_16x16().to(device)
     teacher = cnn_train.SimplePacketCNN().to(device)
 
-    teacher.load_state_dict(torch.load("./AI/Model/CNN/packet_classifier_front_16_epoch50.pth"))
+    teacher.load_state_dict(torch.load("./AI/Model/CNN/Model/packet_classifier_grafana_16_epoch50.pth"))
     teacher.eval()
 
     transform = transforms.Compose([
@@ -55,14 +58,14 @@ def main():
         transforms.ToTensor(),
     ])
 
-    train_normal = cnn_train.PacketImageDataset('./Data/byte_16/jenkins/train', transform=transform, is_flat_structure=True)
-    test_normal = cnn_train.PacketImageDataset('./Data/byte_16/jenkins/test', transform=transform, is_flat_structure=True)
+    train_normal = cnn_train.PacketImageDataset('./Data/byte_16/grafana/train', transform=transform, is_flat_structure=True)
+    test_normal = cnn_train.PacketImageDataset('./Data/byte_16/grafana/test', transform=transform, is_flat_structure=True)
 
     train_attack = cnn_train.load_attack_subset('./Data/attack_to_byte_16', 'train', transform)
     test_attack = cnn_train.load_attack_subset('./Data/attack_to_byte_16', 'test', transform)
 
     # ✅ DataLoader 생성 (배치 크기 최적화)
-    batch_size = 16384  # ✅ 메모리에 따라 조절
+    batch_size = 8192  # ✅ 메모리에 따라 조절
     train_dataset = torch.utils.data.ConcatDataset([train_normal, train_attack])
    
     test_loader_normal = DataLoader(test_normal, batch_size=batch_size, shuffle=False)
@@ -96,7 +99,7 @@ def main():
         print(f"Epoch {epoch+1}, Loss: {running_loss/len(train_loader):.4f}")
 
     # ✅ 모델 저장
-    torch.save(student.state_dict(), "student_mobilenet_16x16.pth")
+    torch.save(student.state_dict(), "student_mobilenet_grafana_image_16.pth")
     print("\n✅ Student 모델 학습 완료 및 저장됨!")
 
 if __name__ == "__main__":

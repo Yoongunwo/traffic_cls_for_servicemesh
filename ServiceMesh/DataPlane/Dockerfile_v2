@@ -1,0 +1,58 @@
+FROM ubuntu:20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CONDA_DIR=/opt/conda
+ENV PATH=$CONDA_DIR/bin:$PATH
+
+RUN apt-get update && apt-get install -y software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update
+
+# --- Install dependencies ---
+RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    curl \
+    git \
+    wget \
+    sudo \
+    vim \
+    net-tools \
+    procps \
+    iptables-persistent \
+    iputils-ping \
+    python3.10 \
+    python3.10-distutils \
+    python3.10-dev \
+    python3-setuptools \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# --- Install Miniconda ---
+RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh && \
+    bash Miniconda3-latest-Linux-x86_64.sh -b -p $CONDA_DIR && \
+    rm Miniconda3-latest-Linux-x86_64.sh
+
+# --- Conda & PyTorch (CPU-only with OpenBLAS) ---
+RUN conda update -n base -c defaults conda && \
+    conda install -y python=3.10 && \
+    conda install -y pytorch torchvision torchaudio cpuonly -c pytorch && \
+    conda clean -afy
+
+# --- Workdir & copy code ---
+WORKDIR /app
+COPY ./ ./
+
+# --- Python deps ---
+RUN $CONDA_DIR/bin/pip install --upgrade pip setuptools wheel
+RUN $CONDA_DIR/bin/pip install -r requirements.txt
+
+# --- Setup user & permissions ---
+RUN useradd -m -s /bin/bash -u 5555 proxyuser && \
+    echo "proxyuser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
+    chown -R proxyuser:proxyuser /app
+
+# --- Permissions ---
+RUN chmod +x /app/iptables.sh
+RUN mkdir -p /app/model && chmod -R 777 /app/model
+
+# --- Entrypoint ---
+ENTRYPOINT ["/bin/sh", "-c", "/app/iptables.sh && while true; do sleep 1000; done"]

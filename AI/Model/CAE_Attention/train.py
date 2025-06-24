@@ -120,7 +120,11 @@ def calculate_threshold(model, test_loader, device, threshold_path):
 def evaluate_attention_cae(model_path, threshold_path, test_loader, device):
     model = AttentionCAE().to(device)
     model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
-    threshold = np.load(threshold_path).item()
+    
+    try:
+        threshold = np.load(threshold_path).item()
+    except FileNotFoundError:
+        threshold = None
 
     model.eval()
 
@@ -148,11 +152,11 @@ def evaluate_attention_cae(model_path, threshold_path, test_loader, device):
     print(f"ROC AUC: {roc_auc_score(all_labels, all_scores):.4f}")
 
 def train_model(device, train_loader, epoches, model_dir, model_path, threshold_path):
-    train_loader = DataLoader(train_loader, batch_size=BATCH_SIZE, shuffle=True)
     model = AttentionCAE()
     
     model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.MSELoss()
 
     for epoch in range(epoches):
@@ -177,7 +181,7 @@ def train_model(device, train_loader, epoches, model_dir, model_path, threshold_
     torch.save(model.state_dict(), os.path.join(model_dir, model_path))
     print(f"\n✅ Model saved to {MODEL_PATH}")
 
-    calculate_threshold(model, train_loader, device, threshold_path=threshold_path)
+    calculate_threshold(model, train_loader, device, threshold_path=os.path.join(model_dir, threshold_path))
     print(f"✅ Threshold saved to {THRESHOLD_PATH}")
 
 # TRAIN_DATASET = './Data/cic_data/Wednesday-workingHours/benign_train'

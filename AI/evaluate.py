@@ -31,47 +31,54 @@ from AI.Model.CNN_BiLSTM_AE import train as cnn_bilstm_ae_train
 
 from AI.Model.KD_OCSVM import train as kd_ocsvm_train
 
+from AI import train as com_train
+
 import matplotlib.pyplot as plt
 
+TEST = 'cic'
+PREPROCESSING_TYPE = 'zigzag'
+METHOD = '_window4'
 
+# TEST_DATASET = f'./Data/byte_16_{PREPROCESSING_TYPE}_seq/save_front/test'
+# ATTACK_DATASET = f'./Data/byte_16_{PREPROCESSING_TYPE}_attack/'
 
-TEST = 'front'
-PREPROCESSING_TYPE = 'spiral'
-
-TEST_DATASET = f'./Data/byte_16_{PREPROCESSING_TYPE}/save_front/test'
-ATTACK_DATASET = f'./Data/byte_16_{PREPROCESSING_TYPE}_attack/'
+TEST_DATASET = f'./Data/cic_data/Wednesday-workingHours/{PREPROCESSING_TYPE}_seq/benign_train'
+ATTACK_DATASET = f'./Data/cic_data/Wednesday-workingHours/{PREPROCESSING_TYPE}_seq/attack'
 
 # ocsvm
-OCSVM_MODEL_PATH = f'./AI/Model/OCSVM/Model/{TEST}_{PREPROCESSING_TYPE}_ocsvm_cnn.pth'
-OCSVM_SVM_MODEL_PATH = f'./AI/Model/OCSVM/Model/{TEST}_{PREPROCESSING_TYPE}_ocsvm.pkl'
+OCSVM_MODEL_PATH = f'./AI/Model/OCSVM/Model/{TEST}_{PREPROCESSING_TYPE}_ocsvm_cnn{METHOD}.pth'
+OCSVM_SVM_MODEL_PATH = f'./AI/Model/OCSVM/Model/{TEST}_{PREPROCESSING_TYPE}_ocsvm{METHOD}.pkl'
 
 # PatchCore
-PATCHCORE_EMBEDDING_PATH=f'./AI/Model/PatchCore/Model/{TEST}_{PREPROCESSING_TYPE}_feature_bank.npy',
-PATCHCORE_MODEL_PATH=f'./AI/Model/PatchCore/Model/{TEST}_{PREPROCESSING_TYPE}_nn_model.pkl',
+PATCHCORE_EMBEDDING_PATH=f'./AI/Model/PatchCore/Model/{TEST}_{PREPROCESSING_TYPE}_feature_bank{METHOD}.npy'
+PATCHCORE_MODEL_PATH=f'./AI/Model/PatchCore/Model/{TEST}_{PREPROCESSING_TYPE}_nn_model{METHOD}.pkl'
 
 # f-AnoGAN
-F_ANOGAN_G_PATH = f'./AI/Model/f_AnoGAN/Model/{TEST}_{PREPROCESSING_TYPE}_generator.pth'
-F_ANOGAN_E_PATH = f'./AI/Model/f_AnoGAN/Model/{TEST}_{PREPROCESSING_TYPE}_encoder.pth'
-F_ANOGAN_THRESHOLD_PATH = f'./AI/Model/f_AnoGAN/Model/{TEST}_{PREPROCESSING_TYPE}_threshold.npy'
+F_ANOGAN_G_PATH = f'./AI/Model/f_AnoGAN/Model/{TEST}_{PREPROCESSING_TYPE}_generator{METHOD}.pth'
+F_ANOGAN_E_PATH = f'./AI/Model/f_AnoGAN/Model/{TEST}_{PREPROCESSING_TYPE}_encoder{METHOD}.pth'
+F_ANOGAN_THRESHOLD_PATH = f'./AI/Model/f_AnoGAN/Model/{TEST}_{PREPROCESSING_TYPE}_threshold{METHOD}.npy'
 
 # Deep SVDD
-DEEP_SVDD_MODEL_PATH = f'./AI/Model/Deep_SVDD/Model/{TEST}_{PREPROCESSING_TYPE}_deep_svdd_model.pth'
-DEEP_SVDD_CENTER_PATH = f'./AI/Model/Deep_SVDD/Model/{TEST}_{PREPROCESSING_TYPE}_deep_svdd_center.npy'
-DEEP_SVDD_THRESHOLD_PATH = f'./AI/Model/Deep_SVDD/Model/{TEST}_{PREPROCESSING_TYPE}_deep_svdd_threshold.npy'
+DEEP_SVDD_MODEL_PATH = f'./AI/Model/Deep_SVDD/Model/{TEST}_{PREPROCESSING_TYPE}_deep_svdd{METHOD}.pth'
+DEEP_SVDD_CENTER_PATH = f'./AI/Model/Deep_SVDD/Model/{TEST}_{PREPROCESSING_TYPE}_center{METHOD}.npy'
+DEEP_SVDD_THRESHOLD_PATH = f'./AI/Model/Deep_SVDD/Model/{TEST}_{PREPROCESSING_TYPE}_threshold{METHOD}.npy'
 
 # CNN-BiLSTM-AE
-CNN_BILSTM_AE_MODEL_PATH = f'./AI/Model/CNN_BiLSTM_AE/Model/{TEST}_{PREPROCESSING_TYPE}_cnn_bilstm_ae.pth'
-CNN_BILSTM_AE_THRESHOLD_PATH = f'./AI/Model/CNN_BiLSTM_AE/Model/{TEST}_{PREPROCESSING_TYPE}_threshold.npy'
+CNN_BILSTM_AE_MODEL_PATH = f'./AI/Model/CNN_BiLSTM_AE/Model/{TEST}_{PREPROCESSING_TYPE}_cnn_bilstm_ae{METHOD}.pth'
+CNN_BILSTM_AE_THRESHOLD_PATH = f'./AI/Model/CNN_BiLSTM_AE/Model/{TEST}_{PREPROCESSING_TYPE}_threshold{METHOD}.npy'
 
 # CAE-Attention
-CAE_ATTENTION_MODEL_PATH = f'./AI/Model/CAE_Attention/Model/{TEST}_{PREPROCESSING_TYPE}_attention_cae.pth'
-CAE_ATTENTION_THRESHOLD_PATH = f'./AI/Model/CAE_Attention/Model/{TEST}_{PREPROCESSING_TYPE}_threshold_attention_cae.npy'
+CAE_ATTENTION_MODEL_PATH = f'./AI/Model/CAE_Attention/Model/{TEST}_{PREPROCESSING_TYPE}_attention_cae{METHOD}.pth'
+CAE_ATTENTION_THRESHOLD_PATH = f'./AI/Model/CAE_Attention/Model/{TEST}_{PREPROCESSING_TYPE}_threshold_attention_cae{METHOD}.npy'
 
 # CAE
-CAE_MODEL_PATH = f'./AI/Model/CAE/Model/{TEST}_{PREPROCESSING_TYPE}_autoencoder.pth'
-CAE_THRESHOLD_PATH = f'./AI/Model/CAE/Model/{TEST}_{PREPROCESSING_TYPE}_autoencoder_threshold.npy'
+CAE_MODEL_PATH = f'./AI/Model/CAE/Model/{TEST}_{PREPROCESSING_TYPE}_autoencoder{METHOD}.pth'
+CAE_THRESHOLD_PATH = f'./AI/Model/CAE/Model/{TEST}_{PREPROCESSING_TYPE}_autoencoder_threshold{METHOD}.npy'
 
-BATCH_SIZE = 4096 * 16
+BATCH_SIZE = 1024 * 4
+SIZE = 32
+
+MAX_EVAL = 20000
 
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -83,7 +90,26 @@ def main():
 
     # ✅ 데이터 로딩
     normal_test = cnn_train.PacketImageDataset(TEST_DATASET, transform, is_flat_structure=True, label=0)
-    attack_test = cnn_train.PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=False, label=1)
+    attack_test = cnn_train.PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=True, label=1)
+    if TEST == 'cic':
+        limited_indices = list(range(min(len(normal_test), MAX_EVAL)))
+        normal_test = Subset(normal_test, limited_indices)
+        attack_test = Subset(attack_test, limited_indices)
+        print(f"Evaluating on {len(normal_test)} samples.")
+
+    if SIZE == 32:
+        # 원래 Dataset 객체에서 경로와 라벨 추출
+        original_dataset = normal_test.dataset if isinstance(normal_test, Subset) else normal_test
+        selected_indices = normal_test.indices if isinstance(normal_test, Subset) else list(range(len(normal_test)))
+        image_paths = [original_dataset.images[i] for i in selected_indices]
+        labels = [original_dataset.labels[i] for i in selected_indices]
+        normal_test = com_train.SlidingConcatDataset(image_paths, labels, transform=transform)
+
+        original_dataset = attack_test.dataset if isinstance(attack_test, Subset) else attack_test
+        selected_indices = attack_test.indices if isinstance(attack_test, Subset) else list(range(len(attack_test)))
+        image_paths = [original_dataset.images[i] for i in selected_indices]
+        labels = [original_dataset.labels[i] for i in selected_indices]
+        attack_test = com_train.SlidingConcatDataset(image_paths, labels, transform=transform)
 
     min_len = min(len(normal_test), len(attack_test))
     test_dataset = torch.utils.data.ConcatDataset([
@@ -94,7 +120,7 @@ def main():
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
     # one class svm
-    featureCNN = ocs_train.DeepFeatureCNN()
+    featureCNN = ocs_train.DeepFeatureCNN32() if SIZE == 32 else ocs_train.DeepFeatureCNN()
     featureCNN.load_state_dict(torch.load(OCSVM_MODEL_PATH, weights_only=True))
     featureCNN.to(device)
     featureCNN.eval()
@@ -127,68 +153,71 @@ def main():
     # print("KD-OCSVM AUC:", roc_auc_score(labels_test, predictions), "\n")
 
     # # deep svdd
-    featureCNN = svdd_train.FeatureCNN()
-    featureCNN.load_state_dict(torch.load(DEEP_SVDD_MODEL_PATH, weights_only=True))
-    featureCNN.eval()
-    featureCNN.to(device)
+    # featureCNN = svdd_train.FeatureCNN32() if SIZE == 32 else svdd_train.FeatureCNN()
+    # featureCNN.load_state_dict(torch.load(DEEP_SVDD_MODEL_PATH, weights_only=True))
+    # featureCNN.eval()
+    # featureCNN.to(device)
 
-    feats_test, labels_test = svdd_train.extract_features(featureCNN, test_loader, device)
+    # feats_test, labels_test = svdd_train.extract_features(featureCNN, test_loader, device)
 
-    center = np.load(DEEP_SVDD_CENTER_PATH)
-    threshold = np.load(DEEP_SVDD_THRESHOLD_PATH)
+    # center = np.load(DEEP_SVDD_CENTER_PATH)
+    # threshold = np.load(DEEP_SVDD_THRESHOLD_PATH)
 
-    dists = np.linalg.norm(feats_test - center, axis=1)
+    # dists = np.linalg.norm(feats_test - center, axis=1)
 
-    preds = (dists > threshold).astype(int)
+    # preds = (dists > threshold).astype(int)
 
-    print("Deep SVDD Predictions:")
-    print(classification_report(labels_test, preds, digits=4))
-    print("Deep SVDD AUC:", roc_auc_score(labels_test, preds))
+    # print("Deep SVDD Predictions:")
+    # print(classification_report(labels_test, preds, digits=4))
+    # print("Deep SVDD AUC:", roc_auc_score(labels_test, preds))
 
-    # f-AnoGAN
-    G = f_anogan_train.Generator()
-    E = f_anogan_train.Encoder()
+    # # f-AnoGAN
+    # G = f_anogan_train.Generator32() if SIZE == 32 else f_anogan_train.Generator()
+    # E = f_anogan_train.Encoder32() if SIZE == 32 else f_anogan_train.Encoder()
 
-    G.load_state_dict(torch.load(F_ANOGAN_G_PATH, weights_only=True))
-    E.load_state_dict(torch.load(F_ANOGAN_E_PATH, weights_only=True))
-    threshold = np.load(F_ANOGAN_THRESHOLD_PATH).item()
+    # G.load_state_dict(torch.load(F_ANOGAN_G_PATH, weights_only=True))
+    # E.load_state_dict(torch.load(F_ANOGAN_E_PATH, weights_only=True))
+    # threshold = np.load(F_ANOGAN_THRESHOLD_PATH).item()
 
 
-    G.to(device)
-    E.to(device)
-    G.eval()
-    E.eval()
+    # G.to(device)
+    # E.to(device)
+    # G.eval()
+    # E.eval()
 
-    print("f-AnoGAN Predictions:")
+    # print("f-AnoGAN Predictions:")
 
-    f_anogan_train.evaluate(
-        encoder=E,
-        generator=G,
-        dataloader=test_loader,
-        device=device
-    )
+    # f_anogan_train.evaluate(
+    #     encoder=E,
+    #     generator=G,
+    #     dataloader=test_loader,
+    #     device=device
+    # )
 
     # cae-attention
-    cae_attention_train.evaluate_attention_cae(
-        model_path=CAE_ATTENTION_MODEL_PATH,
-        threshold_path=CAE_ATTENTION_THRESHOLD_PATH,
-        test_loader=test_loader,
-        device=device,
-    )
+    # cae_attention_train.evaluate_attention_cae(
+    #     model_path=CAE_ATTENTION_MODEL_PATH,
+    #     threshold_path=CAE_ATTENTION_THRESHOLD_PATH,
+    #     test_loader=test_loader,
+    #     device=device,
+    # )
 
     # CAE
-    cae = cae_model.ConvAutoencoder()
-    cae.load_state_dict(torch.load(CAE_MODEL_PATH, weights_only=True))
-    cae.eval()
-    cae.to(device)
-    threshold = np.load(CAE_THRESHOLD_PATH).item()
+    # cae = cae_model.ConvAutoencoder32() if SIZE == 32 else cae_model.ConvAutoencoder()
+    # cae.load_state_dict(torch.load(CAE_MODEL_PATH, weights_only=True))
+    # cae.eval()
+    # cae.to(device)
+    # try:
+    #     threshold = np.load(CAE_THRESHOLD_PATH).item()
+    # except:
+    #     threshold = None
 
-    predictions, anomaly_scores = cae_evaluate.evaluate_model(
-        model=cae,
-        test_loader=test_loader,
-        device=device,
-        threshold=threshold
-    )
+    # cae_evaluate.evaluate_model(
+    #     model=cae,
+    #     test_loader=test_loader,
+    #     device=device,
+    #     threshold=threshold
+    # )
 
     # CNN_BiLSTM_AE
     transform = transforms.Compose([
@@ -200,6 +229,12 @@ def main():
 
     normal_test = cnn_train.PacketImageDataset(TEST_DATASET, transform, is_flat_structure=True, label=0)
     attack_test = cnn_train.PacketImageDataset(ATTACK_DATASET, transform, is_flat_structure=False, label=1)
+
+    if SIZE == 32:
+        limited_indices = list(range(min(len(normal_test), MAX_EVAL)))
+        normal_test = Subset(normal_test, limited_indices)
+        attack_test = Subset(attack_test, limited_indices)
+
     min_len = min(len(normal_test), len(attack_test))
     test_dataset = torch.utils.data.ConcatDataset([
         Subset(normal_test, list(range(min_len))),
@@ -207,7 +242,9 @@ def main():
     ])
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
     
-    cnn_bilsm_ae = cnn_bilstm_ae_train.CNN_BiLSTM_Autoencoder(input_dim=256)
+    cnn_bilsm_ae = cnn_bilstm_ae_train.CNN_BiLSTM_Autoencoder32(input_dim=256) if SIZE == 32 \
+        else cnn_bilstm_ae_train.CNN_BiLSTM_Autoencoder(input_dim=256)
+    
     cnn_bilsm_ae.load_state_dict(torch.load(CNN_BILSTM_AE_MODEL_PATH, weights_only=True))
     cnn_bilsm_ae.eval()
     cnn_bilsm_ae.to(device)

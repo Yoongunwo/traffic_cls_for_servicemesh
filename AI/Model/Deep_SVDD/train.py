@@ -31,6 +31,23 @@ class FeatureCNN(nn.Module):
     def forward(self, x):
         return self.encoder(x)
 
+class FeatureCNN32(nn.Module):
+    def __init__(self):
+        super(FeatureCNN32, self).__init__()
+        self.encoder = nn.Sequential(
+            nn.Conv2d(1, 32, 3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, 3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Flatten(),
+            nn.Linear(64 * 8 * 8, 128)
+        )
+
+    def forward(self, x):
+        return self.encoder(x)
+
 # ✅ 특징 추출 함수
 @torch.no_grad()
 def extract_features(model, dataloader, device):
@@ -44,7 +61,7 @@ def extract_features(model, dataloader, device):
     return np.array(feats), np.array(labels)
 
 def train_model(device, train_loader, epoches, model_dir, model_path, center_path, threshold_path):
-    model = FeatureCNN().to(device)
+    model = FeatureCNN32().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     feats_init, _ = extract_features(model, train_loader, device)
