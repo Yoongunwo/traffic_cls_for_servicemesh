@@ -107,13 +107,20 @@ TYPE = 'row'
 SEQ = '_seq'
 
 DATA_PATHS = {
-    'React+Nginx': f'./Data/byte_16_{TYPE}{SEQ}/save_front/train',
-    'FastAPI': f'./Data/byte_16_{TYPE}{SEQ}/save_back/train',
-    'PostgreSQL': f'./Data/byte_16_{TYPE}{SEQ}/postgres/train',
-    'pgAdmin': f'./Data/byte_16_{TYPE}{SEQ}/pgadmin/train',
-    'Jenkins': f'./Data/byte_16_{TYPE}{SEQ}/jenkins/train',
-    'Prometheus': f'./Data/byte_16_{TYPE}{SEQ}/prometheus/train',
-    'Grafana': f'./Data/byte_16_{TYPE}{SEQ}/grafana/train',
+    # 'React+Nginx': f'./Data/byte_16_{TYPE}{SEQ}/save_front/train',
+    # 'FastAPI': f'./Data/byte_16_{TYPE}{SEQ}/save_back/train',
+    # 'PostgreSQL': f'./Data/byte_16_{TYPE}{SEQ}/postgres/train',
+    # 'pgAdmin': f'./Data/byte_16_{TYPE}{SEQ}/pgadmin/train',
+    # 'Jenkins': f'./Data/byte_16_{TYPE}{SEQ}/jenkins/train',
+    # 'Prometheus': f'./Data/byte_16_{TYPE}{SEQ}/prometheus/train',
+    # 'Grafana': f'./Data/byte_16_{TYPE}{SEQ}/grafana/train',
+    'React+Nginx': f'./Data/byte_16_{TYPE}/save_front/train',
+    'FastAPI': f'./Data/byte_16_{TYPE}/save_back/train',
+    'PostgreSQL': f'./Data/byte_16_{TYPE}/postgres/train',
+    'pgAdmin': f'./Data/byte_16_{TYPE}/pgadmin/train',
+    'Jenkins': f'./Data/byte_16_{TYPE}/jenkins/train',
+    'Prometheus': f'./Data/byte_16_{TYPE}/prometheus/train',
+    'Grafana': f'./Data/byte_16_{TYPE}/grafana/train',
 }
 ATTACK_PATHS = {
     'brute_force': f'./Data/byte_16_{TYPE}_attack/brute_force/train',
@@ -134,7 +141,7 @@ ATTACK_PATHS = {
 # }
 
 
-SIZE = 32
+SIZE = 16
 DIMENSION = 2  # 2 or 3
 
 safe_colors = [
@@ -148,8 +155,12 @@ safe_colors = [
 ]
 
 def main():
-    IMAGES = 150
-    SEED = 49  # ✅ 시드 고정
+    IMAGES = 100
+    SEED = 3 # ✅ 시드 고정
+    # input
+    SEED = sys.argv[1] if len(sys.argv) > 1 else SEED
+    SEED = int(SEED)
+
     random.seed(SEED)
     np.random.seed(SEED)
     torch.manual_seed(SEED)
@@ -267,7 +278,7 @@ def main():
         #            borderpad=0.1, borderaxespad=0.2)
         plt.grid(True)
         plt.tight_layout()
-        plt.savefig('./Data_Distribution/feature_distribution.png', dpi=300, bbox_inches='tight', pad_inches=0.05)
+        plt.savefig(f'./Data_Distribution/test/feature_distribution_{SEED}.png', dpi=300, bbox_inches='tight', pad_inches=0.05)
     else: 
         pca = PCA(n_components=3)
         feats_3d = pca.fit_transform(all_feats)
@@ -298,7 +309,7 @@ def main():
         ax.set_zlabel("PCA 3", fontsize=15)
         ax.legend(fontsize=15)
         plt.tight_layout()
-        plt.savefig('./Data_Distribution/feature_distribution_3D.png', dpi=300, bbox_inches='tight', pad_inches=0.05)
+        plt.savefig('./Data_Distribution/test/feature_distribution_3D.png', dpi=300, bbox_inches='tight', pad_inches=0.05)
 
 if __name__ == "__main__":
     main()
